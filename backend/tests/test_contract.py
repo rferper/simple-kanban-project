@@ -106,7 +106,15 @@ def test_errors_carry_a_message(client):
 # documented exception. A new endpoint that forgets its token requirement fails
 # here rather than in production.
 
-PUBLIC = {("/api/auth/login", "post")}
+#: Endpoints reachable without a token. Adding to this set is deliberately a
+#: visible edit in a file called "contract" - opening a door should not be a
+#: one-line change nobody notices in review.
+PUBLIC = {
+    ("/api/auth/login", "post"),
+    # §23 - someone who opens the API in a browser should learn what it is,
+    # rather than be told to authenticate before they know to what.
+    ("/", "get"),
+}
 
 
 def _is_public(document: dict, path: str, method: str) -> bool:
@@ -129,12 +137,12 @@ def test_the_implementation_is_closed_by_default(implemented):
         assert operation.get("security"), f"{method.upper()} {path} requires no token"
 
 
-def test_only_login_is_public_in_the_contract(contract):
+def test_exactly_the_expected_endpoints_are_public_in_the_contract(contract):
     public = {op for op in operations(contract) if _is_public(contract, *op)}
     assert public == PUBLIC
 
 
-def test_only_login_is_public_in_the_implementation(implemented):
+def test_exactly_the_expected_endpoints_are_public_in_the_implementation(implemented):
     public = {
         op
         for op in operations(implemented)

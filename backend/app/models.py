@@ -271,6 +271,17 @@ class LoginResponse(Wire):
     user: UserPublic
 
 
+class ServiceInfo(Wire):
+    """What `GET /` says. Public, so it must contain nothing worth protecting."""
+
+    name: str
+    version: str
+    description: str
+    docs: str
+    openapi: str
+    app: str
+
+
 class Error(Wire):
     message: str
     kind: str | None = None

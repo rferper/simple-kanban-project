@@ -54,6 +54,8 @@ security:
   - bearerAuth: []
 
 tags:
+  - name: service
+    description: What this is, for anyone who arrives without a token.
   - name: auth
     description: Sign in and out. The only public endpoint lives here.
   - name: cards
@@ -66,6 +68,27 @@ tags:
     description: Job-advert extraction (§15). Isolated — the rest works without it.
 
 paths:
+  /:
+    get:
+      tags: [service]
+      summary: What this service is
+      description: |
+        Public, and deliberately so. Someone who opens the API in a browser
+        should find out what it is, rather than a 401 telling them to
+        authenticate before they know to what.
+
+        It says nothing a stranger could not learn from the repository: the
+        name, the version, and where the docs and the app are. No counts, no
+        data, no hint about who has an account here.
+      operationId: serviceInfo
+      security: []
+      responses:
+        "200":
+          description: The service, and where to go next.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ServiceInfo" }
+
   /api/auth/login:
     post:
       tags: [auth]
@@ -763,6 +786,25 @@ components:
             A regex's reading and a model's are not the same quality, and a
             client should be able to tell them apart — a misconfigured
             deployment should not look like a working one.
+
+    ServiceInfo:
+      type: object
+      description: |
+        Public, so it carries nothing worth protecting.
+      required: [name, version, description, docs, openapi, app]
+      properties:
+        name: { type: string }
+        version: { type: string }
+        description: { type: string }
+        docs:
+          type: string
+          description: Path to the interactive documentation.
+        openapi:
+          type: string
+          description: Path to the generated OpenAPI document.
+        app:
+          type: string
+          description: Where the frontend is served.
 
     LoginRequest:
       type: object
