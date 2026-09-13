@@ -52,9 +52,7 @@ def me(user: auth.CurrentUser) -> UserPublic:
 )
 def logout(
     store: StoreDep,
-    credentials: Annotated[
-        HTTPAuthorizationCredentials | None, Depends(auth.bearer_scheme)
-    ],
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(auth.bearer_scheme)],
     _: auth.CurrentUser,
 ) -> Response:
     """Revocation is immediate: the token is deleted, not marked. This is the

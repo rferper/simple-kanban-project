@@ -32,7 +32,7 @@ The work that is actually outstanding starts at #19.
 
 Walk the acceptance criteria clause by clause, then check:
 
-- The test suite passes (see the commands in `AGENTS.md`)
+- `make check` passes: lint, types and the whole test suite
 - The app still starts and the dashboard still renders
 - Route changes are reflected in the spec's route list, `_docs/specs.md` §19, in
   the same commit

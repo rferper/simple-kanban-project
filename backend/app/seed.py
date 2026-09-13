@@ -10,7 +10,7 @@ deadline, and an application that has already been archived.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from app.models import Card, JobDetails, Preferences, Subtask
 
@@ -25,7 +25,7 @@ def _day(offset: int) -> date:
 
 
 def _stamp(offset_days: int) -> datetime:
-    return datetime.now(timezone.utc) + timedelta(days=offset_days)
+    return datetime.now(UTC) + timedelta(days=offset_days)
 
 
 def _next_weekday(target: int) -> date:
@@ -195,10 +195,7 @@ def build_seed() -> tuple[list[Card], Preferences]:
                 cv_version="cv-industry-v1.pdf",
                 fit="LOW",
                 outcome="REJECTED",
-                notes=(
-                    "Wanted five years of industry experience. "
-                    "Worth reusing the cover letter."
-                ),
+                notes=("Wanted five years of industry experience. Worth reusing the cover letter."),
             ),
         ),
         # ------------------------------------------------------- Learning

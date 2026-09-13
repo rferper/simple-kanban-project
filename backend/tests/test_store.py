@@ -9,7 +9,7 @@ Anything specific to durability — surviving a restart — is at the bottom, si
 the in-memory store cannot and is not meant to.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -28,7 +28,7 @@ def store(request, tmp_path):
 
 
 def now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def a_card(**overrides) -> Card:

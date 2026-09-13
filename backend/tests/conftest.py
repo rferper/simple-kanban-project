@@ -37,10 +37,7 @@ def store(request, tmp_path, demo_user: User) -> Store:
     the `Store` protocol is that nothing above it can tell which one it has, and
     the only way to keep that promise honest is to run the API against both.
     """
-    if request.param == "memory":
-        store = InMemoryStore()
-    else:
-        store = SqliteStore(tmp_path / "api.sqlite3")
+    store = InMemoryStore() if request.param == "memory" else SqliteStore(tmp_path / "api.sqlite3")
     store.save_user(demo_user)
     return store
 
@@ -48,7 +45,9 @@ def store(request, tmp_path, demo_user: User) -> Store:
 @pytest.fixture(params=["memory", "sqlite"])
 def seeded_store(request, tmp_path) -> Store:
     """The development fixtures from _docs/specs.md §31, plus the demo account."""
-    store = InMemoryStore() if request.param == "memory" else SqliteStore(tmp_path / "seeded.sqlite3")
+    store = (
+        InMemoryStore() if request.param == "memory" else SqliteStore(tmp_path / "seeded.sqlite3")
+    )
     store.seed()
     return store
 

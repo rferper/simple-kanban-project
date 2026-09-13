@@ -24,7 +24,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'open', 'clean')]
+    [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'lint', 'types', 'check', 'open', 'clean')]
     [string]$Target = 'help',
 
     [int]$ApiPort = 8001,
@@ -99,6 +99,9 @@ function Show-Help {
     Write-Host '  .\make.ps1 api        run just the API'
     Write-Host '  .\make.ps1 web        run just the frontend'
     Write-Host '  .\make.ps1 test       run the test suite'
+    Write-Host '  .\make.ps1 lint       lint the backend and check the frontend'
+    Write-Host '  .\make.ps1 types      type-check the backend'
+    Write-Host '  .\make.ps1 check      lint + types + tests'
     Write-Host '  .\make.ps1 test-one -T test_auth'
     Write-Host '  .\make.ps1 open       open the app in a browser'
     Write-Host '  .\make.ps1 clean      remove caches'
@@ -173,6 +176,35 @@ function Invoke-TestOne {
     )
 }
 
+function Invoke-Lint {
+    Assert-Uv
+    Invoke-Native -File 'uv' -Arguments @('run', 'ruff', 'check', '.') -WorkingDirectory $Backend
+    Invoke-Native -File 'uv' -Arguments @('run', 'ruff', 'format', '--check', '.') -WorkingDirectory $Backend
+
+    # No ESLint: that means npm and a node_modules, which decisions #3 avoided.
+    # This is dependency-free and catches what actually breaks a no-build
+    # frontend - a typo'd import path or a renamed export.
+    if (Get-Command 'node' -ErrorAction SilentlyContinue) {
+        Invoke-Native -File 'node' -Arguments @((Join-Path $Frontend 'check.mjs'))
+    }
+    else {
+        Write-Host 'frontend: skipped (node not on PATH)'
+    }
+}
+
+function Invoke-Types {
+    Assert-Uv
+    Invoke-Native -File 'uv' -Arguments @('run', 'ty', 'check') -WorkingDirectory $Backend
+}
+
+function Invoke-Check {
+    Invoke-Lint
+    Invoke-Types
+    Invoke-Test
+    Write-Host ''
+    Write-Host 'lint, types and tests all pass.'
+}
+
 function Invoke-Open {
     Start-Process "http://localhost:$WebPort"
 }
@@ -193,6 +225,9 @@ switch ($Target) {
     'web'      { Invoke-Web }
     'test'     { Invoke-Test }
     'test-one' { Invoke-TestOne }
+    'lint'     { Invoke-Lint }
+    'types'    { Invoke-Types }
+    'check'    { Invoke-Check }
     'open'     { Invoke-Open }
     'clean'    { Invoke-Clean }
 }

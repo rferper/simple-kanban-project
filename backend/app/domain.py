@@ -7,7 +7,7 @@ status or an area changes, it changes here and nowhere else.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 
 
@@ -96,24 +96,30 @@ AREA_STATUSES: dict[Area, tuple[Status, ...]] = {
 ARCHIVED_OUTCOMES = frozenset({Outcome.REJECTED, Outcome.WITHDRAWN, Outcome.DECLINED})
 
 
-def default_status(area: Area) -> Status:
-    return AREA_STATUSES[area][0]
+# These take `Area | str` and `Status | str` because the wire models are
+# configured with `use_enum_values=True` and so carry plain strings. A StrEnum
+# member hashes and compares equal to its value, so both work - the signatures
+# just admit it rather than relying on the reader to know.
 
 
-def done_status(area: Area) -> Status:
-    return AREA_STATUSES[area][-1]
+def default_status(area: Area | str) -> Status:
+    return AREA_STATUSES[Area(area)][0]
 
 
-def status_belongs_to(area: Area, status: Status) -> bool:
-    return status in AREA_STATUSES[area]
+def done_status(area: Area | str) -> Status:
+    return AREA_STATUSES[Area(area)][-1]
 
 
-def status_names(area: Area) -> str:
-    return ", ".join(AREA_STATUSES[area])
+def status_belongs_to(area: Area | str, status: Status | str) -> bool:
+    return status in AREA_STATUSES[Area(area)]
+
+
+def status_names(area: Area | str) -> str:
+    return ", ".join(AREA_STATUSES[Area(area)])
 
 
 def now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def new_id(prefix: str) -> str:
