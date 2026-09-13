@@ -1,5 +1,6 @@
-# Career Pivot Kanban — Project Source of Truth
+# NextLane — Project Source of Truth
 
+> **Product name:** NextLane.  
 > **Document purpose:** This file is the authoritative product and implementation guide for the project.  
 > **Primary audience:** AI coding agent + developer.  
 > **Project type:** Weekend personal project / AI-development course project / portfolio project.  
@@ -13,7 +14,9 @@
 
 ## 1.1 Working concept
 
-Build a focused productivity application for academics moving into industry.
+The app is called **NextLane**. Use this name everywhere the product is named: UI titles, page and document titles, README, and portfolio material.
+
+NextLane is a focused productivity application for academics moving into industry.
 
 The user must simultaneously manage three competing areas:
 
@@ -30,7 +33,7 @@ The application should combine:
 - visually pleasant and motivating presentation,
 - optional AI assistance for turning job adverts into structured job cards.
 
-The app is **not** a generic project-management platform.
+NextLane is **not** a generic project-management platform.
 
 The central product question is:
 
@@ -2169,10 +2172,13 @@ Code quality matters, but unnecessary architecture does not.
 Use:
 
 ```text
+NextLane
 Current Job
 Job Search
 Learning / Pivot
 ```
+
+The product is always called **NextLane** — never "the Kanban app", "Career Pivot Kanban", or a placeholder name.
 
 Avoid silently renaming the product into generic concepts such as:
 
@@ -2253,7 +2259,7 @@ Do not allow the implementation and specification to silently diverge.
 
 When context is limited, use this condensed description:
 
-> Build a responsive, cute-but-professional web Kanban for academics moving into industry. The product has three connected areas: Current Job, Job Search, and Learning/Pivot. The main dashboard shows three vertical columns plus weekly workload and a deterministic Focus Today section. Each area has a full Kanban. Job Search has specialised application data and stages: Interesting → Preparing → Applied → Interview → Offer, with rejected/withdrawn jobs archived. Learning cards can link to job cards. Shared cards support priority, deadline, estimated hours, tags, subtasks, and a planned-this-week flag. Users can optionally set weekly available hours and compare them with planned estimated effort. The only required AI feature is pasting a job advert and extracting an editable structured job card. The app must remain fully usable without AI. Keep the MVP focused, visually warm, motivating, and portfolio-quality. Do not add generic productivity features without explicit instruction.
+> **NextLane** is a responsive, cute-but-professional web Kanban for academics moving into industry. The product has three connected areas: Current Job, Job Search, and Learning/Pivot. The main dashboard shows three vertical columns plus weekly workload and a deterministic Focus Today section. Each area has a full Kanban. Job Search has specialised application data and stages: Interesting → Preparing → Applied → Interview → Offer, with rejected/withdrawn jobs archived. Learning cards can link to job cards. Shared cards support priority, deadline, estimated hours, tags, subtasks, and a planned-this-week flag. Users can optionally set weekly available hours and compare them with planned estimated effort. The only required AI feature is pasting a job advert and extracting an editable structured job card. NextLane must remain fully usable without AI. Keep the MVP focused, visually warm, motivating, and portfolio-quality. Do not add generic productivity features without explicit instruction.
 
 ---
 
