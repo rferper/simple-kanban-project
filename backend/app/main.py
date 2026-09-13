@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import errors
-from app.routers import ai, auth, cards, links, preferences
+from app.routers import ai, auth, cards, links, preferences, root
 
 DESCRIPTION = """
 The backend for NextLane — a career-pivot Kanban for academics moving into
@@ -49,6 +49,7 @@ app.add_middleware(
 
 errors.install(app)
 
+app.include_router(root.router)
 app.include_router(auth.router)
 app.include_router(cards.router)
 app.include_router(links.router)

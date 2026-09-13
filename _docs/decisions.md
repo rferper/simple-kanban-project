@@ -362,3 +362,25 @@ found both the hard way.
 Cost accepted: CI depends on the Makefile staying correct, so `make.ps1` is now
 the copy that can drift instead. The two are short and the header of each says
 to change them together.
+
+## 22. `GET /` is public, and says nothing worth protecting
+
+The API answers at `/` with its name, version, a one-line description, and where
+the docs and the frontend are. No token needed.
+
+Why public: the alternative is what it replaced - a bare "Not Found" to anyone
+who opens the API in a browser. A 401 would be no better, because it tells
+someone to authenticate before they know what they would be authenticating to.
+
+Why it is boring: it is reachable by anyone, so it carries nothing a stranger
+could not read in the repository. No counts - not even "12 cards", which is a
+fact about somebody's job search - no account, no data. A test asserts the exact
+set of keys, so adding a field to it is a deliberate act.
+
+Adding it meant editing `PUBLIC` in `backend/tests/test_contract.py`, which is
+the point of that set: opening a door should be a visible edit in a file called
+"contract", not a line nobody notices in review. The contract test failed first
+and was what caught the endpoint being undocumented.
+
+Cost accepted: two public endpoints instead of one, and the description now
+duplicates a sentence that also lives in the README and the spec.

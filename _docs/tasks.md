@@ -12,9 +12,9 @@ mostly independent of each other.
 Read `_docs/process.md` before starting one, and `_docs/decisions.md` before
 re-litigating anything it has already settled.
 
-> **Status.** Tasks 1–22 are implemented — see `git log`. Tasks 1–18 describe how
+> **Status.** Every task here is implemented — see `git log`. Tasks 1–18 describe how
 > this repository was built and are recorded because the backlog is also the map
-> of how the product got made. Anything still outstanding starts at 23.
+> of how the product got made. Anything still The backlog is empty; add to it as new work appears.
 
 ---
 
@@ -242,10 +242,6 @@ Description: Add a CI workflow that installs dependencies, runs the test suite
 and reports the result on pull requests. It must run on Linux, which is the
 reason the Makefile exists and the reason `.gitattributes` pins its line
 endings. Make a failing suite block a merge.
-
----
-
-# Open
 
 ## 23. Make the API root say what it is
 
