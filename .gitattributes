@@ -1,0 +1,12 @@
+# GNU make runs the Makefile's recipes through a POSIX shell in WSL, macOS and
+# CI, where a trailing carriage return in a recipe is a syntax error. This
+# repository is developed on Windows with core.autocrlf=true, so without this
+# the Makefile would arrive CRLF on checkout and break there.
+Makefile    text eol=lf
+*.sh        text eol=lf
+
+# Written and read by Python and Node on every platform; keep them consistent.
+*.py        text eol=lf
+*.js        text eol=lf
+*.yaml      text eol=lf
+*.yml       text eol=lf
