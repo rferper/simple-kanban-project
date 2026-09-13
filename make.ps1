@@ -1,0 +1,198 @@
+<#
+.SYNOPSIS
+  NextLane task runner for Windows PowerShell.
+
+.DESCRIPTION
+  The same targets as the Makefile, for people not in WSL.
+
+      .\make.ps1              list the targets
+      .\make.ps1 install      install backend dependencies
+      .\make.ps1 run          run the whole app, API and frontend
+      .\make.ps1 test         run the test suite
+
+  Why this exists as well as the Makefile: GNU make on Windows hands recipes to
+  cmd.exe, and the Makefile's recipes are POSIX shell — `trap`, `&`, `wait`.
+  Those work in WSL, macOS and CI, and would break under cmd.
+
+  The two files are two front doors onto the same commands. Change one, change
+  the other.
+
+.PARAMETER Target
+  Which task to run. Defaults to listing them.
+#>
+
+[CmdletBinding()]
+param(
+    [Parameter(Position = 0)]
+    [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'open', 'clean')]
+    [string]$Target = 'help',
+
+    [int]$ApiPort = 8001,
+    [int]$WebPort = 8000,
+
+    # For test-one:  .\make.ps1 test-one -T test_auth
+    [string]$T = ''
+)
+
+$ErrorActionPreference = 'Stop'
+
+$Root     = $PSScriptRoot
+$Backend  = Join-Path $Root 'backend'
+$Frontend = Join-Path $Root 'frontend'
+
+<#
+  Run an external program.
+
+  Windows PowerShell turns anything a native command writes to stderr into an
+  ErrorRecord, and under `ErrorActionPreference = 'Stop'` that aborts the script
+  even when the command succeeded — `uv` printing "Using CPython 3.12" was enough
+  to kill this script before this helper existed. So: relax the preference around
+  the call, and judge success by the exit code, which is the thing that means it.
+#>
+function Invoke-Native {
+    param(
+        [Parameter(Mandatory)][string]$File,
+        [string[]]$Arguments = @(),
+        [string]$WorkingDirectory,
+        [switch]$IgnoreExitCode
+    )
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    if ($WorkingDirectory) { Push-Location $WorkingDirectory }
+
+    try {
+        & $File @Arguments
+        $code = $LASTEXITCODE
+        if (-not $IgnoreExitCode -and $code -ne 0) {
+            throw "$File exited with code $code"
+        }
+    }
+    finally {
+        if ($WorkingDirectory) { Pop-Location }
+        $ErrorActionPreference = $previous
+    }
+}
+
+function Find-Python {
+    foreach ($candidate in 'python', 'python3') {
+        $found = Get-Command $candidate -ErrorAction SilentlyContinue
+        if ($found) { return $found.Source }
+    }
+    if (Get-Command 'py' -ErrorAction SilentlyContinue) { return 'py' }
+
+    throw 'No Python found on PATH (looked for python, python3, py).'
+}
+
+function Assert-Uv {
+    if (-not (Get-Command 'uv' -ErrorAction SilentlyContinue)) {
+        throw 'uv is not on PATH. See https://docs.astral.sh/uv/'
+    }
+}
+
+function Show-Help {
+    Write-Host ''
+    Write-Host '  NextLane'
+    Write-Host ''
+    Write-Host '  .\make.ps1 install    install backend dependencies'
+    Write-Host '  .\make.ps1 run        run the whole app, API and frontend'
+    Write-Host '  .\make.ps1 api        run just the API'
+    Write-Host '  .\make.ps1 web        run just the frontend'
+    Write-Host '  .\make.ps1 test       run the test suite'
+    Write-Host '  .\make.ps1 test-one -T test_auth'
+    Write-Host '  .\make.ps1 open       open the app in a browser'
+    Write-Host '  .\make.ps1 clean      remove caches'
+    Write-Host ''
+    Write-Host "  frontend  http://localhost:$WebPort"
+    Write-Host "  API       http://localhost:$ApiPort   docs at /docs"
+    Write-Host '  sign in   researcher@example.com / nextlane'
+    Write-Host ''
+}
+
+function Invoke-Install {
+    Assert-Uv
+    Invoke-Native -File 'uv' -Arguments @('sync') -WorkingDirectory $Backend
+}
+
+function Invoke-Api {
+    Assert-Uv
+    Invoke-Native -File 'uv' -WorkingDirectory $Backend -IgnoreExitCode -Arguments @(
+        'run', 'uvicorn', 'app.main:app', '--reload', '--port', "$ApiPort"
+    )
+}
+
+function Invoke-Web {
+    $py = Find-Python
+    Invoke-Native -File $py -IgnoreExitCode -Arguments @(
+        '-m', 'http.server', "$WebPort", '--directory', $Frontend
+    )
+}
+
+function Invoke-Run {
+    Assert-Uv
+    $py = Find-Python
+
+    Write-Host 'NextLane'
+    Write-Host "  frontend  http://localhost:$WebPort"
+    Write-Host "  API       http://localhost:$ApiPort  (docs at /docs)"
+    Write-Host '  sign in   researcher@example.com / nextlane'
+    Write-Host ''
+    Write-Host '  Ctrl-C stops both.'
+    Write-Host ''
+
+    # The API goes in the background; the frontend holds the foreground so that
+    # Ctrl-C lands here and the finally block can take the API down with it.
+    $api = Start-Process -FilePath 'uv' `
+        -ArgumentList @('run', 'uvicorn', 'app.main:app', '--reload', '--port', "$ApiPort") `
+        -WorkingDirectory $Backend -PassThru -NoNewWindow
+
+    try {
+        Invoke-Web
+    }
+    finally {
+        if ($api -and -not $api.HasExited) {
+            # /T because uvicorn --reload spawns a worker child, and killing only
+            # the parent leaves the child holding the port.
+            & taskkill /PID $api.Id /T /F 2>&1 | Out-Null
+        }
+        Write-Host ''
+        Write-Host 'Stopped.'
+    }
+}
+
+function Invoke-Test {
+    Assert-Uv
+    Invoke-Native -File 'uv' -Arguments @('run', 'pytest') -WorkingDirectory $Backend
+}
+
+function Invoke-TestOne {
+    if (-not $T) { throw 'Give it a pattern:  .\make.ps1 test-one -T test_auth' }
+    Assert-Uv
+    Invoke-Native -File 'uv' -WorkingDirectory $Backend -Arguments @(
+        'run', 'pytest', '-k', $T
+    )
+}
+
+function Invoke-Open {
+    Start-Process "http://localhost:$WebPort"
+}
+
+function Invoke-Clean {
+    foreach ($name in '__pycache__', '.pytest_cache') {
+        Get-ChildItem -Path $Root -Filter $name -Recurse -Directory -ErrorAction SilentlyContinue |
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    Write-Host 'cleaned'
+}
+
+switch ($Target) {
+    'help'     { Show-Help }
+    'install'  { Invoke-Install }
+    'run'      { Invoke-Run }
+    'api'      { Invoke-Api }
+    'web'      { Invoke-Web }
+    'test'     { Invoke-Test }
+    'test-one' { Invoke-TestOne }
+    'open'     { Invoke-Open }
+    'clean'    { Invoke-Clean }
+}

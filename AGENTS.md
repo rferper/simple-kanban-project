@@ -1,0 +1,113 @@
+# AGENTS.md
+
+**NextLane** — a responsive web Kanban for academics moving into industry. It
+holds three connected areas, Current Job, Job Search and Learning / Pivot, under
+one dashboard that answers a single question: what should I work on today?
+
+`_docs/specs.md` is the product. Read the sections your task touches before
+adding anything that is not in it. §44 is the condensed version when context is
+short.
+
+## Commands
+
+Two processes: a static frontend on 8000, the API on 8001. This table is the
+single place commands live; do not hardcode them into the other documents.
+
+Prefer the task runner at the repository root — `make` in WSL, macOS and CI,
+`.\make.ps1` in Windows PowerShell. They carry the same targets; change one,
+change the other.
+
+Do not share `backend/.venv` between WSL and Windows: a Linux venv has a `lib64`
+symlink Windows cannot delete, and uv then fails to rebuild it. `rm -rf
+backend/.venv` clears it.
+
+| What | Command | Underneath |
+| --- | --- | --- |
+| run the whole app | `make run` | both servers, Ctrl-C stops both |
+| run just the API | `make api` | `cd backend && uv run uvicorn app.main:app --reload --port 8001` |
+| run just the frontend | `make web` | `cd frontend && python -m http.server 8000` |
+| install dependencies | `make install` | `cd backend && uv sync` |
+| the whole test suite | `make test` | `cd backend && uv run pytest` |
+| one test module | `make test-one T=test_auth` | `uv run pytest -k test_auth` |
+| list every target | `make` | — |
+| lint / type / check | _to be filled in — no linter chosen yet_ | |
+
+Frontend <http://localhost:8000>, API <http://localhost:8001>, docs at `/docs`.
+Sign in with `researcher@example.com` / `nextlane`.
+
+Ports are Makefile variables: `make run API_PORT=8091`. Changing one permanently
+means changing it in three places — the Makefile, `servers:` in `openapi.yaml`,
+and `API_BASE` in `frontend/src/api/client.js`.
+
+The frontend has no toolchain and no test runner of its own
+(`_docs/decisions.md` #3).
+
+## Layout
+
+| Path | What it is |
+| --- | --- |
+| `_docs/specs.md` | the product specification — the source of truth |
+| `_docs/process.md` | how work moves from issue to merged |
+| `_docs/decisions.md` | calls already settled; read before re-litigating one |
+| `_docs/task-template.md` | the shape a groomed issue takes |
+| `_docs/_team/` | the role briefs the subagents run on |
+| `openapi.yaml` | the API contract, derived from the frontend client (#7) |
+| `frontend/` | the whole UI, talking to the API — start at its README |
+| `backend/` | the FastAPI API, on a mock database — start at its README |
+| `backend/app/store.py` | **the storage seam** — swap the mock here |
+| `backend/app/auth.py` | password hashing, bearer tokens, `current_user` |
+| `backend/tests/` | written before the endpoints; the contract test guards drift |
+| `frontend/src/api/client.js` | **the only module that talks to a backend** |
+| `frontend/src/domain/` | pure logic: validation, workload (§22), focus ranking (§23) |
+| `src/simple_kanban_project/` | uv package stub — see Rules |
+| `pyproject.toml` | dependencies and the uv build configuration |
+
+## Rules
+
+- Dependencies are added in `pyproject.toml`. Do not add one without asking. The
+  frontend has none and is meant to keep it that way — no npm, no bundler, no
+  framework, without asking first.
+- Every backend call goes through `frontend/src/api/client.js`. If you find
+  yourself reaching for `fetch` anywhere else, add a method there instead.
+- `openapi.yaml` and the running API must agree. `backend/tests/test_contract.py`
+  checks both directions — change the contract and the code in the same commit.
+- Backend storage goes through the `Store` protocol. Routers and
+  `app/service.py` must not know how anything is stored.
+- The API is closed by default: every endpoint requires a bearer token except
+  `POST /api/auth/login`. Adding a public endpoint means changing `PUBLIC` in
+  `backend/tests/test_contract.py`, which is deliberately a visible edit.
+- Never put a password or a hash in a response model. A contract test walks
+  every response schema to check.
+- Do not delete `src/simple_kanban_project/`. `pyproject.toml` declares the
+  `uv_build` backend and a `[project.scripts]` entry pointing into it, so
+  removing the directory on its own breaks `uv sync`.
+- The product is **NextLane**. Preserve the domain terminology — Current Job,
+  Job Search, Learning / Pivot — and do not rename it into Workspaces, Projects
+  or Tickets.
+- `_docs/specs.md` §33 is the non-goals list and it is binding. No calendar, no
+  time tracking, no multi-user, no notifications.
+- The app must stay fully usable with the AI feature switched off or failing.
+- One issue at a time, one branch per issue, merged into `main`. The engineer
+  does not merge and does not close the issue.
+- Any judgment call the issue did not settle goes into `_docs/decisions.md` in
+  the same commit that makes it.
+
+## The team
+
+Work runs through three roles, launched as subagents by the main session:
+
+- **PM** grooms a task before anyone implements it — `_docs/_team/pm.md`
+- **Engineer** implements one groomed task — `_docs/_team/software-engineer.md`
+- **QA** checks the result against the acceptance criteria and returns PASS or
+  FAIL — `_docs/_team/qa-engineer.md`
+
+The main session is the orchestrator. It does not groom, implement or test
+itself. The full lifecycle is in `_docs/process.md`.
+
+## Documents
+
+- `_docs/specs.md` — the product, including §33 non-goals, §41 development
+  order, §42 definition of done, and §43 the agent operating rules
+- `_docs/process.md` — the lifecycle, the branch convention, the pre-close checks
+- `_docs/decisions.md` — settled calls and their reasoning
+- `_docs/task-template.md` — read before writing an issue
