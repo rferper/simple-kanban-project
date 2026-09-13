@@ -34,6 +34,10 @@ backend/.venv` clears it.
 | type-check | `make types` | `uv run ty check` (the `app` package) |
 | everything before a commit | `make check` | lint + types + tests |
 
+CI runs `make lint`, `make types` and `make test` on Linux for every push and
+pull request (`.github/workflows/check.yml`) — through the Makefile, so there is
+only one copy of how to check this project.
+
 Frontend <http://localhost:8000>, API <http://localhost:8001>, docs at `/docs`.
 Sign in with `researcher@example.com` / `nextlane`.
 
