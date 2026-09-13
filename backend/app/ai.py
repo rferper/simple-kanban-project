@@ -1,23 +1,43 @@
 """Job-advert extraction — §15.
 
-A heuristic parser standing in for a model call: labels first ("Company: …"),
-then headed bullet sections, then a few keyword sweeps. It is honest about what
-it could not find, which is the whole point of the preview step in §15.3 — the
-user fixes the gaps before anything is saved.
+Two ways to read an advert, and one contract over both:
 
-Isolated on purpose (§27). If this module is unavailable, every other endpoint
-still works and the Kanban remains fully usable.
+* **A model call** (`app/ai_model.py`), used when `ANTHROPIC_API_KEY` is set.
+* **A heuristic parser** (below), used when it is not — labels first
+  ("Company: …"), then headed bullet sections, then keyword sweeps.
 
-Replacing it with a real model call means replacing `extract` and nothing else.
+`NEXTLANE_AI` picks between them: `auto` (the default — model when configured,
+parser otherwise), `model`, or `heuristic`.
+
+Keeping the parser rather than deleting it is deliberate. A fresh clone has no
+API key, and a portfolio project that shows a broken feature to anyone who has
+not signed up for an API account is worse than one that reads adverts a little
+less well. It also means the test suite never needs credentials or a network.
+
+**The two are not interchangeable, and the app says which it used.** The result
+carries `source`, so a reviewer can tell a model's reading from a regex's, and
+so a misconfigured deployment cannot quietly look like a working one.
+
+When the model is the configured reader and it fails, that is an error, not a
+reason to quietly hand back a weaker answer: §15.3 already says what to do with
+a failure — keep the advert, say so, offer manual entry — and silently
+downgrading would hide a broken integration behind plausible-looking output.
+
+Isolated on purpose (§27). If this whole module is unavailable, every other
+endpoint still works and the Kanban remains fully usable.
 """
 
 from __future__ import annotations
 
+import logging
+import os
 import re
 from datetime import date, datetime
 
 from app.errors import AiUnreadable
 from app.models import ExtractedJob, ExtractionResult
+
+logger = logging.getLogger(__name__)
 
 MIN_LENGTH = 40
 
@@ -51,14 +71,54 @@ TAG_HINTS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
+def reader() -> str:
+    """Which reader this process is configured to use: "model" or "heuristic"."""
+    from app import ai_model
+
+    choice = os.environ.get("NEXTLANE_AI", "auto").strip().lower()
+    if choice == "model":
+        return "model"
+    if choice == "heuristic":
+        return "heuristic"
+    return "model" if ai_model.is_configured() else "heuristic"
+
+
 def extract(advert: str) -> ExtractionResult:
+    """Read an advert. Never persists anything — the preview is the point (§15.3)."""
     text = (advert or "").strip()
 
+    # Checked before dispatching, so nine characters never become an API call.
     if len(text) < MIN_LENGTH:
         raise AiUnreadable(
             "There isn't enough text here to read reliably. "
             "Paste the full advert, or create the job manually."
         )
+
+    if reader() == "model":
+        return _extract_with_model(text)
+
+    return _extract_with_heuristics(text)
+
+
+def _extract_with_model(text: str) -> ExtractionResult:
+    from app import ai_model
+
+    try:
+        extracted = ai_model.extract(text)
+    except Exception as error:  # noqa: BLE001 - every failure reads the same to a user
+        # Deliberately broad: an auth failure, a rate limit, a network error and
+        # a malformed response are one thing from here — the advert could not be
+        # read. The detail goes to the log, not to the person pasting.
+        logger.exception("Model extraction failed")
+        raise AiUnreadable(
+            "I couldn't read this advert just now. "
+            "You can retry, or create the job manually."
+        ) from error
+
+    return _result(extracted, source="model")
+
+
+def _extract_with_heuristics(text: str) -> ExtractionResult:
 
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     paragraphs = _paragraphs(text)
@@ -79,12 +139,18 @@ def extract(advert: str) -> ExtractionResult:
         tags=_tags(text),
     )
 
+    return _result(extracted, source="heuristic")
+
+
+def _result(extracted: ExtractedJob, *, source: str) -> ExtractionResult:
+    """§15.2 — say what could not be found rather than inventing it."""
     missing = [name for name in ("company", "role") if not getattr(extracted, name)]
 
     return ExtractionResult(
         extracted=extracted,
         missing=missing,
         confidence="good" if not missing else "partial",
+        source=source,
     )
 
 

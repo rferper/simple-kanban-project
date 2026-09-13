@@ -12,9 +12,9 @@ mostly independent of each other.
 Read `_docs/process.md` before starting one, and `_docs/decisions.md` before
 re-litigating anything it has already settled.
 
-> **Status.** Tasks 1–19 are implemented — see `git log`. Tasks 1–18 describe how
+> **Status.** Tasks 1–20 are implemented — see `git log`. Tasks 1–18 describe how
 > this repository was built and are recorded because the backlog is also the map
-> of how the product got made. Anything still outstanding starts at 20.
+> of how the product got made. Anything still outstanding starts at 21.
 
 ---
 
@@ -215,10 +215,6 @@ Nothing in the service layer or the routers should change — if either needs
 editing, the seam is in the wrong place. Add migrations and a way to seed a
 fresh database with the development fixtures.
 
----
-
-# Open
-
 ## 20. Replace the advert parser with a real model call
 
 Goal: Extraction reads adverts it was not written for.
@@ -228,6 +224,10 @@ model call, keeping the response shape and the editable-preview contract exactly
 as they are, so nothing in the frontend changes. Handle the model being slow,
 unavailable or returning something unusable, and keep the feature isolated: the
 Kanban must stay fully usable with extraction switched off (§27).
+
+---
+
+# Open
 
 ## 21. Choose and wire up a linter and type checker
 
