@@ -32,7 +32,7 @@ UV       ?= uv
 PY ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null)
 
 .DEFAULT_GOAL := help
-.PHONY: help install run api web test test-one clean open require-python
+.PHONY: help install run api web test test-one lint types check clean open require-python
 
 require-python:
 	@if [ -z "$(PY)" ]; then \
@@ -84,6 +84,20 @@ test: ## Run the test suite
 
 test-one: ## Run one module or pattern: make test-one T=test_auth
 	cd $(BACKEND) && $(UV) run pytest -k '$(T)'
+
+lint: ## Lint and format-check the backend, and check the frontend
+	cd $(BACKEND) && $(UV) run ruff check .
+	cd $(BACKEND) && $(UV) run ruff format --check .
+	@$(PY) -c "import shutil,sys; sys.exit(0 if shutil.which('node') else 1)" \
+		&& node $(FRONTEND)/check.mjs \
+		|| echo 'frontend: skipped (node not on PATH)'
+
+types: ## Type-check the backend
+	cd $(BACKEND) && $(UV) run ty check
+
+check: lint types test ## Everything that has to pass before a commit
+	@echo ''
+	@echo 'lint, types and tests all pass.'
 
 open: require-python ## Open the app in a browser
 	@$(PY) -c "import webbrowser; webbrowser.open('http://localhost:$(WEB_PORT)')"

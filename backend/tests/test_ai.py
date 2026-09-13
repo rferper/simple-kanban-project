@@ -118,4 +118,7 @@ class TestExtractionFailure:
         """§27 — AI is isolated. If it fails, the Kanban still works."""
         client.post("/api/ai/extract-job-advert", json={"advert": "x"})
         assert client.get("/api/cards").status_code == 200
-        assert client.post("/api/cards", json={"title": "Still fine", "area": "LEARNING"}).status_code == 201
+        assert (
+            client.post("/api/cards", json={"title": "Still fine", "area": "LEARNING"}).status_code
+            == 201
+        )

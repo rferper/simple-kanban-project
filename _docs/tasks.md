@@ -12,9 +12,9 @@ mostly independent of each other.
 Read `_docs/process.md` before starting one, and `_docs/decisions.md` before
 re-litigating anything it has already settled.
 
-> **Status.** Tasks 1–20 are implemented — see `git log`. Tasks 1–18 describe how
+> **Status.** Tasks 1–21 are implemented — see `git log`. Tasks 1–18 describe how
 > this repository was built and are recorded because the backlog is also the map
-> of how the product got made. Anything still outstanding starts at 21.
+> of how the product got made. Anything still outstanding starts at 22.
 
 ---
 
@@ -225,10 +225,6 @@ as they are, so nothing in the frontend changes. Handle the model being slow,
 unavailable or returning something unusable, and keep the feature isolated: the
 Kanban must stay fully usable with extraction switched off (§27).
 
----
-
-# Open
-
 ## 21. Choose and wire up a linter and type checker
 
 Goal: `make check` means something beyond the tests.
@@ -237,6 +233,10 @@ Description: Pick a linter and a type checker, configure them for both the
 Python backend and the JavaScript frontend, and fix what they find on the
 existing code. Add them to the task runners and to the pre-close checklist in
 `_docs/process.md`, which currently names a step nobody can run.
+
+---
+
+# Open
 
 ## 22. Add continuous integration
 

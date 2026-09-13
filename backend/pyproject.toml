@@ -17,6 +17,8 @@ dev = [
     "pytest>=8.3",
     "httpx>=0.27",
     "pyyaml>=6.0",
+    "ruff>=0.16.7",
+    "ty>=0.0.80",
 ]
 
 # Not a distributable package — it is an application that is run, not imported.
@@ -27,3 +29,44 @@ package = false
 pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes - the ones that are almost always real bugs
+    "I",        # import sorting
+    "UP",       # pyupgrade - do not write 3.8 in a 3.12 project
+    "B",        # bugbear - mutable defaults, shadowed loop vars
+    "SIM",      # simplifiable code
+    "RUF",      # ruff's own
+]
+ignore = [
+    # The schema strings and prompts in app/ai_model.py and app/sqlite_store.py
+    # read better as written than wrapped to satisfy a column count.
+    "E501",
+    # This codebase writes prose in its docstrings and uses real punctuation -
+    # en dashes, typographic quotes. RUF001-003 flag those as "ambiguous
+    # characters", which is aimed at homoglyph attacks in identifiers, not at
+    # English. Turning them off is cheaper than degrading the writing.
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests say what they mean; a long assertion is clearer on one line.
+"tests/*" = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ty.src]
+# The type checker runs over the shipped code. Tests deliberately do things it
+# cannot narrow - `store.get_card(id).title` where the fixture guarantees the
+# card exists - and littering them with assertions to satisfy it would make them
+# harder to read for no gain in safety. Ruff still covers the whole repository.
+include = ["app"]

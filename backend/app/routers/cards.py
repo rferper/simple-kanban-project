@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, Response, status
 from app import service
 from app.auth import current_user
 from app.dependencies import get_store
-from app.store import Store
 from app.models import Card, CardCreate, CardUpdate, JobDetailsInput
+from app.store import Store
 
 router = APIRouter(
     prefix="/api/cards",
@@ -35,12 +35,12 @@ def create_card(payload: CardCreate, store: Repo) -> Card:
 
 
 @router.get("/{cardId}", response_model=Card, summary="One card")
-def get_card(cardId: str, store: Repo) -> Card:  # noqa: N803 — path name is the contract
+def get_card(cardId: str, store: Repo) -> Card:
     return service.get_card(store, cardId)
 
 
 @router.patch("/{cardId}", response_model=Card, summary="Update a card")
-def update_card(cardId: str, payload: CardUpdate, store: Repo) -> Card:  # noqa: N803
+def update_card(cardId: str, payload: CardUpdate, store: Repo) -> Card:
     """A partial update. This one endpoint serves moving a card between columns
     (§14), the planned-this-week toggle (§10.5) and marking complete (§12.1).
     `completedAt` is managed by the server."""
@@ -48,7 +48,7 @@ def update_card(cardId: str, payload: CardUpdate, store: Repo) -> Card:  # noqa:
 
 
 @router.delete("/{cardId}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a card")
-def delete_card(cardId: str, store: Repo) -> Response:  # noqa: N803
+def delete_card(cardId: str, store: Repo) -> Response:
     service.delete_card(store, cardId)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -58,7 +58,7 @@ def delete_card(cardId: str, store: Repo) -> Response:  # noqa: N803
     response_model=Card,
     summary="Update a job card's application details",
 )
-def update_job_details(cardId: str, payload: JobDetailsInput, store: Repo) -> Card:  # noqa: N803
+def update_job_details(cardId: str, payload: JobDetailsInput, store: Repo) -> Card:
     """Also the archive path: setting `outcome` to REJECTED, WITHDRAWN or
     DECLINED takes the application off the board while keeping everything it
     held (§8.1, §16.8)."""

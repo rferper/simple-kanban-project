@@ -20,7 +20,6 @@ from app.domain import (
     status_names,
 )
 from app.errors import Conflict, Invalid, NotFound
-from app.store import Store
 from app.models import (
     Card,
     CardCreate,
@@ -32,6 +31,7 @@ from app.models import (
     Subtask,
     SubtaskInput,
 )
+from app.store import Store
 
 
 def _require(store: Store, card_id: str) -> Card:
@@ -41,7 +41,7 @@ def _require(store: Store, card_id: str) -> Card:
     return card
 
 
-def _check_status(area: Area, status: Status) -> None:
+def _check_status(area: Area | str, status: Status | str) -> None:
     if not status_belongs_to(area, status):
         raise Invalid(
             f"{status} is not a column on the {area} board. Use one of: {status_names(area)}."
@@ -122,7 +122,7 @@ def update_card(store: Store, card_id: str, payload: CardUpdate) -> Card:
     card = _require(store, card_id)
     changes = payload.model_dump(exclude_unset=True, by_alias=False)
 
-    if "status" in changes:
+    if payload.status is not None:
         _check_status(card.area, payload.status)
         card.status = payload.status
 
@@ -188,22 +188,22 @@ def _require_learning(store: Store, card_id: str) -> Card:
     return card
 
 
-def _require_job(store: Store, card_id: str) -> Card:
+def _require_job(store: Store, card_id: str) -> tuple[Card, JobDetails]:
+    """Returns the details alongside the card, so callers do not have to prove
+    again what this function just checked."""
     card = _require(store, card_id)
     if card.job is None:
         raise Conflict(f"Card {card_id} is not a job card.")
-    return card
+    return card, card.job
 
 
-def set_link(
-    store: Store, learning_id: str, job_id: str, *, connected: bool
-) -> tuple[Card, Card]:
+def set_link(store: Store, learning_id: str, job_id: str, *, connected: bool) -> tuple[Card, Card]:
     """§9.3 — both ends move together or neither does. Idempotent either way."""
     learning = _require_learning(store, learning_id)
-    job = _require_job(store, job_id)
+    job, details = _require_job(store, job_id)
 
     learning.related_job_card_ids = learning.related_job_card_ids or []
-    job.job.related_learning_card_ids = job.job.related_learning_card_ids or []
+    details.related_learning_card_ids = details.related_learning_card_ids or []
 
     already = job_id in learning.related_job_card_ids
     if connected and not already:
@@ -211,11 +211,11 @@ def set_link(
     elif not connected and already:
         learning.related_job_card_ids.remove(job_id)
 
-    linked_back = learning_id in job.job.related_learning_card_ids
+    linked_back = learning_id in details.related_learning_card_ids
     if connected and not linked_back:
-        job.job.related_learning_card_ids.append(learning_id)
+        details.related_learning_card_ids.append(learning_id)
     elif not connected and linked_back:
-        job.job.related_learning_card_ids.remove(learning_id)
+        details.related_learning_card_ids.remove(learning_id)
 
     timestamp = now()
     learning.updated_at = timestamp
@@ -238,9 +238,7 @@ def _forget_links(store: Store, card: Card) -> None:
         for learning_id in card.job.related_learning_card_ids:
             other = store.get_card(learning_id)
             if other and other.related_job_card_ids is not None:
-                other.related_job_card_ids = [
-                    x for x in other.related_job_card_ids if x != card.id
-                ]
+                other.related_job_card_ids = [x for x in other.related_job_card_ids if x != card.id]
                 store.save_card(other)
 
 

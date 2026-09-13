@@ -318,3 +318,29 @@ Leaving fit out is `_docs/specs.md` §15.2 enforced by construction rather than 
 instruction: a field the model cannot fill is a field it cannot invent.
 
 Cost accepted: none worth the name.
+
+## 20. Ruff and ty for the backend; no npm linter for the frontend
+
+`ruff check` and `ruff format` over the whole backend, `ty check` over `app/`.
+Both are dev dependencies, both run from `make lint` / `make types`, and
+`make check` is lint + types + tests.
+
+The frontend gets `frontend/check.mjs` instead of ESLint: a dependency-free
+script that syntax-checks every module and cross-references imports against
+exports - a path that does not resolve, a name that is not exported, an import
+that is never used.
+
+Why not ESLint: it means npm, a `node_modules` and a build-adjacent toolchain,
+which #3 deliberately avoided. That is a real trade - a proper linter would catch
+more - but reversing #3 is the user's call, not something to slip in through a
+lint task. The script covers what actually breaks a no-build frontend: a typo'd
+import path or a renamed export, neither of which shows up until the browser
+reaches that line.
+
+Why ty checks only `app/`: tests deliberately do things a checker cannot narrow -
+`store.get_card(id).title`, where the fixture guarantees the card exists - and
+littering them with assertions would make them harder to read for no gain in
+safety. Ruff still covers everything.
+
+Cost accepted: the frontend has no real linter, and adopting the formatter
+reflowed twelve files in one commit.

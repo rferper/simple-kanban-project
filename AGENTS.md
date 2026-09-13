@@ -30,7 +30,9 @@ backend/.venv` clears it.
 | the whole test suite | `make test` | `cd backend && uv run pytest` |
 | one test module | `make test-one T=test_auth` | `uv run pytest -k test_auth` |
 | list every target | `make` | — |
-| lint / type / check | _to be filled in — no linter chosen yet_ | |
+| lint | `make lint` | Ruff over the backend, `frontend/check.mjs` over the frontend |
+| type-check | `make types` | `uv run ty check` (the `app` package) |
+| everything before a commit | `make check` | lint + types + tests |
 
 Frontend <http://localhost:8000>, API <http://localhost:8001>, docs at `/docs`.
 Sign in with `researcher@example.com` / `nextlane`.

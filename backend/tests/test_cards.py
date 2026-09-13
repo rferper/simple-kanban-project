@@ -92,7 +92,9 @@ class TestCreateCardValidation:
     """§29 — forgiving, but not silent."""
 
     def test_blank_title_is_rejected(self, client):
-        assert client.post("/api/cards", json={"title": "   ", "area": "LEARNING"}).status_code == 422
+        assert (
+            client.post("/api/cards", json={"title": "   ", "area": "LEARNING"}).status_code == 422
+        )
 
     def test_missing_title_is_rejected(self, client):
         assert client.post("/api/cards", json={"area": "LEARNING"}).status_code == 422

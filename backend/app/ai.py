@@ -105,14 +105,13 @@ def _extract_with_model(text: str) -> ExtractionResult:
 
     try:
         extracted = ai_model.extract(text)
-    except Exception as error:  # noqa: BLE001 - every failure reads the same to a user
+    except Exception as error:
         # Deliberately broad: an auth failure, a rate limit, a network error and
         # a malformed response are one thing from here — the advert could not be
         # read. The detail goes to the log, not to the person pasting.
         logger.exception("Model extraction failed")
         raise AiUnreadable(
-            "I couldn't read this advert just now. "
-            "You can retry, or create the job manually."
+            "I couldn't read this advert just now. You can retry, or create the job manually."
         ) from error
 
     return _result(extracted, source="model")
@@ -126,7 +125,10 @@ def _extract_with_heuristics(text: str) -> ExtractionResult:
 
     extracted = ExtractedJob(
         company=labels.get("company") or labels.get("employer") or _company(lines, text),
-        role=labels.get("role") or labels.get("position") or labels.get("job title") or _role(lines),
+        role=labels.get("role")
+        or labels.get("position")
+        or labels.get("job title")
+        or _role(lines),
         location=labels.get("location") or _location(text),
         salary_text=labels.get("salary") or labels.get("compensation") or _salary(text),
         work_mode=_work_mode(text),
@@ -227,7 +229,9 @@ def _salary(text: str) -> str:
 def _work_mode(text: str) -> str:
     if re.search(r"\bhybrid\b", text, re.I):
         return "HYBRID"
-    if re.search(r"\b(fully remote|remote[- ]first|work from home|100% remote|remote)\b", text, re.I):
+    if re.search(
+        r"\b(fully remote|remote[- ]first|work from home|100% remote|remote)\b", text, re.I
+    ):
         return "REMOTE"
     if re.search(r"\b(on[- ]site|in[- ]office|onsite)\b", text, re.I):
         return "ONSITE"

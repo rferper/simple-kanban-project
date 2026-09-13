@@ -144,9 +144,21 @@ CREATE INDEX IF NOT EXISTS tokens_user ON tokens (user_id);
 """
 
 JOB_COLUMNS = (
-    "company", "role", "job_url", "location", "salary_text", "work_mode",
-    "contact_name", "contact_details", "job_description", "application_deadline",
-    "interview_date", "cv_version", "fit", "outcome", "notes",
+    "company",
+    "role",
+    "job_url",
+    "location",
+    "salary_text",
+    "work_mode",
+    "contact_name",
+    "contact_details",
+    "job_description",
+    "application_deadline",
+    "interview_date",
+    "cv_version",
+    "fit",
+    "outcome",
+    "notes",
 )
 
 
@@ -171,7 +183,9 @@ class SqliteStore:
             self._db.executescript(SCHEMA)
             row = self._db.execute("SELECT version FROM schema_version").fetchone()
             if row is None:
-                self._db.execute("INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,))
+                self._db.execute(
+                    "INSERT INTO schema_version (version) VALUES (?)", (SCHEMA_VERSION,)
+                )
             elif row["version"] != SCHEMA_VERSION:
                 # Nothing to migrate from yet. When there is, it branches here
                 # rather than silently running against a schema it does not know.
@@ -234,10 +248,18 @@ class SqliteStore:
                         tracks_job_links = excluded.tracks_job_links
                     """,
                     (
-                        card.id, position, card.title, card.description, card.area,
-                        card.status, card.priority, _text(card.deadline),
-                        card.estimated_hours, int(card.planned_this_week),
-                        _text(card.created_at), _text(card.updated_at),
+                        card.id,
+                        position,
+                        card.title,
+                        card.description,
+                        card.area,
+                        card.status,
+                        card.priority,
+                        _text(card.deadline),
+                        card.estimated_hours,
+                        int(card.planned_this_week),
+                        _text(card.created_at),
+                        _text(card.updated_at),
                         _text(card.completed_at),
                         int(card.related_job_card_ids is not None),
                     ),
@@ -245,8 +267,13 @@ class SqliteStore:
 
                 # Child rows are replaced wholesale: a card's tags, subtasks and
                 # links are the card's, not accumulated history.
-                for table in ("card_tags", "subtasks", "job_requirements",
-                              "learning_job_links", "job_learning_links"):
+                for table in (
+                    "card_tags",
+                    "subtasks",
+                    "job_requirements",
+                    "learning_job_links",
+                    "job_learning_links",
+                ):
                     self._db.execute(f"DELETE FROM {table} WHERE card_id = ?", (card.id,))
 
                 self._db.executemany(
@@ -255,10 +282,7 @@ class SqliteStore:
                 )
                 self._db.executemany(
                     "INSERT INTO subtasks (card_id, id, position, title, done) VALUES (?,?,?,?,?)",
-                    [
-                        (card.id, s.id, i, s.title, int(s.done))
-                        for i, s in enumerate(card.subtasks)
-                    ],
+                    [(card.id, s.id, i, s.title, int(s.done)) for i, s in enumerate(card.subtasks)],
                 )
                 self._db.executemany(
                     "INSERT INTO learning_job_links (card_id, position, job_card_id) VALUES (?,?,?)",
@@ -275,7 +299,17 @@ class SqliteStore:
                 self._db.execute("ROLLBACK")
                 raise
 
-        return self.get_card(card.id)
+        return self._reread(self.get_card(card.id), card.id)
+
+    def _reread(self, value, what: str):
+        """A row read back immediately after writing it in the same connection.
+
+        `None` here would mean the write silently did not happen, which is worth
+        a loud failure rather than a confusing one further downstream.
+        """
+        if value is None:
+            raise RuntimeError(f"{what} vanished immediately after being written")
+        return value
 
     def _save_job(self, card_id: str, job: JobDetails) -> None:
         columns = ", ".join(JOB_COLUMNS)
@@ -321,26 +355,9 @@ class SqliteStore:
             )
         ]
 
-        data = {
-            "id": card_id,
-            "title": row["title"],
-            "description": row["description"],
-            "area": row["area"],
-            "status": row["status"],
-            "priority": row["priority"],
-            "deadline": row["deadline"],
-            "estimated_hours": row["estimated_hours"],
-            "planned_this_week": bool(row["planned_this_week"]),
-            "tags": tags,
-            "subtasks": subtasks,
-            "created_at": row["created_at"],
-            "updated_at": row["updated_at"],
-            "completed_at": row["completed_at"],
-            "job": self._hydrate_job(card_id),
-        }
-
+        links = None
         if row["tracks_job_links"]:
-            data["related_job_card_ids"] = [
+            links = [
                 r["job_card_id"]
                 for r in self._db.execute(
                     "SELECT job_card_id FROM learning_job_links WHERE card_id = ? ORDER BY position",
@@ -348,12 +365,29 @@ class SqliteStore:
                 )
             ]
 
-        return Card(**data)
+        # Spelled out rather than built as a dict and splatted: the columns are
+        # heterogeneous, and `Card(**data)` cannot be type-checked.
+        return Card(
+            id=card_id,
+            title=row["title"],
+            description=row["description"],
+            area=row["area"],
+            status=row["status"],
+            priority=row["priority"],
+            deadline=row["deadline"],
+            estimated_hours=row["estimated_hours"],
+            planned_this_week=bool(row["planned_this_week"]),
+            tags=tags,
+            subtasks=subtasks,
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            completed_at=row["completed_at"],
+            job=self._hydrate_job(card_id),
+            related_job_card_ids=links,
+        )
 
     def _hydrate_job(self, card_id: str) -> JobDetails | None:
-        row = self._db.execute(
-            "SELECT * FROM job_details WHERE card_id = ?", (card_id,)
-        ).fetchone()
+        row = self._db.execute("SELECT * FROM job_details WHERE card_id = ?", (card_id,)).fetchone()
         if row is None:
             return None
 
@@ -373,7 +407,7 @@ class SqliteStore:
         ]
 
         return JobDetails(
-            **{column: row[column] for column in JOB_COLUMNS},
+            **{str(column): row[column] for column in JOB_COLUMNS},
             requirements=requirements["required"],
             nice_to_have=requirements["nice"],
             related_learning_card_ids=linked,
@@ -434,9 +468,15 @@ class SqliteStore:
                        display_name = excluded.display_name,
                        password_hash = excluded.password_hash,
                        created_at = excluded.created_at""",
-                (user.id, user.email, user.display_name, user.password_hash, _text(user.created_at)),
+                (
+                    user.id,
+                    user.email,
+                    user.display_name,
+                    user.password_hash,
+                    _text(user.created_at),
+                ),
             )
-        return self.get_user(user.id)
+        return self._reread(self.get_user(user.id), f"user {user.id}")
 
     @staticmethod
     def _hydrate_user(row: sqlite3.Row | None) -> User | None:
@@ -470,7 +510,7 @@ class SqliteStore:
                        expires_at = excluded.expires_at""",
                 (token, user_id, _text(expires_at)),
             )
-        return self.get_token(token)
+        return self._reread(self.get_token(token), "token")
 
     def delete_token(self, token: str) -> bool:
         with self._lock:

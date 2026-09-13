@@ -274,9 +274,7 @@ class TestTheHeuristicStillWorks:
         assert ai.extract(CONVENTIONAL_ADVERT).source == "heuristic"
 
     def test_the_endpoint_works_without_any_key(self, client):
-        response = client.post(
-            "/api/ai/extract-job-advert", json={"advert": CONVENTIONAL_ADVERT}
-        )
+        response = client.post("/api/ai/extract-job-advert", json={"advert": CONVENTIONAL_ADVERT})
         assert response.status_code == 200
         assert response.json()["source"] == "heuristic"
 

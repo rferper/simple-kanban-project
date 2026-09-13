@@ -136,7 +136,9 @@ def test_only_login_is_public_in_the_contract(contract):
 
 def test_only_login_is_public_in_the_implementation(implemented):
     public = {
-        op for op in operations(implemented) if not implemented["paths"][op[0]][op[1]].get("security")
+        op
+        for op in operations(implemented)
+        if not implemented["paths"][op[0]][op[1]].get("security")
     }
     assert public == PUBLIC
 

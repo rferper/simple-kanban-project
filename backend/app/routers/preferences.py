@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends
 from app import service
 from app.auth import current_user
 from app.dependencies import get_store
-from app.store import Store
 from app.models import Preferences, PreferencesUpdate
+from app.store import Store
 
 router = APIRouter(
     prefix="/api/preferences",
