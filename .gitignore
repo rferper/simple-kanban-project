@@ -216,3 +216,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# The SQLite database the backend writes (issue #19). Disposable local state:
+# delete it and the next start reseeds from _docs/specs.md section 31.
+backend/*.sqlite3
+backend/*.sqlite3-wal
+backend/*.sqlite3-shm

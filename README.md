@@ -56,16 +56,17 @@ against [`openapi.yaml`](openapi.yaml).
 The two are **wired together**: the frontend signs in, holds the token, and every
 card you move is a call to the API. There are no mocks left in the frontend.
 
-What is still a stand-in is the database — the backend keeps everything in memory,
-so restarting the API resets the board to its seed data. Swapping that out is a
-second implementation of the `Store` protocol in `backend/app/store.py`.
+The board is kept in SQLite at `backend/nextlane.sqlite3`, seeded on first run
+and gitignored — delete it and the next start reseeds. It is reached only through
+the `Store` protocol, and the whole API test suite runs against both that and the
+in-memory implementation, so neither can quietly drift from the other.
 
 ## Where everything is
 
 | Path | What it is |
 | --- | --- |
 | [`frontend/`](frontend) | the whole UI |
-| [`backend/`](backend) | the FastAPI API, on a mock database |
+| [`backend/`](backend) | the FastAPI API, on SQLite |
 | [`openapi.yaml`](openapi.yaml) | the API contract both sides answer to |
 | [`_docs/specs.md`](_docs/specs.md) | the product specification — the source of truth |
 | [`_docs/process.md`](_docs/process.md) | how work moves from issue to merged |

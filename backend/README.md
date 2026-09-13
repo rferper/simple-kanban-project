@@ -49,17 +49,32 @@ what the endpoints do. `tests/test_contract.py` is the one to watch: it compares
 every path and method in `openapi.yaml` against the running app in both
 directions, so the documentation cannot quietly drift from the code.
 
-## The mock database
+## The database
 
-`app/store.py` holds a `Store` Protocol and one implementation,
-`InMemoryStore` — a few dicts that live as long as the process. Restarting the
-server resets it to the seed data.
+`app/store.py` holds a `Store` Protocol; `app/sqlite_store.py` implements it
+against SQLite through the standard library's `sqlite3` — no ORM, no new
+dependency. The schema is normalised rather than a JSON blob, because
+`_docs/specs.md` §24 describes real relations and a blob would hide every one of
+them from the database.
 
-Swapping in a real database means writing a second implementation of that same
-Protocol and returning it from `get_store` in `app/dependencies.py`.
-Nothing in `app/service.py` or `app/routers/` changes, because nothing in them
-knows how storage works. Tests already prove this seam works: each test overrides
-that dependency with its own fresh store.
+The file lives at `backend/nextlane.sqlite3` and is seeded with the §31 fixtures
+the first time it is created. It is gitignored and disposable: delete it and the
+next start reseeds. Point it somewhere else, or keep it in RAM, with
+
+```sh
+NEXTLANE_DB=/some/path/nextlane.sqlite3
+NEXTLANE_DB=:memory:
+```
+
+`InMemoryStore` is still there, still a dict, and is what `:memory:` selects.
+
+**The two implementations are interchangeable, and a test keeps them that way.**
+`tests/test_store.py` runs one contract against both, and `tests/conftest.py`
+parametrises the whole API suite over both — so every endpoint test runs twice.
+That is what turns "nothing above the seam can tell the difference" from a claim
+into something checked. It has already earned its keep: running the API against
+SQLite found a place where the dict silently allowed two accounts to share an
+email address and SQLite did not.
 
 Two disciplines the mock imposes on purpose, because a real database imposes
 them too:

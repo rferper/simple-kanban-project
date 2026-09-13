@@ -17,7 +17,8 @@ from app import auth
 from app.dependencies import get_store
 from app.main import app
 from app.models import User
-from app.store import InMemoryStore
+from app.sqlite_store import SqliteStore
+from app.store import InMemoryStore, Store
 
 DEMO_PASSWORD = "nextlane"
 
@@ -28,32 +29,44 @@ def demo_user() -> User:
     return auth.build_demo_user()
 
 
-@pytest.fixture
-def store(demo_user: User) -> InMemoryStore:
-    """An empty mock database with one account in it."""
-    return InMemoryStore(users=[demo_user])
+@pytest.fixture(params=["memory", "sqlite"])
+def store(request, tmp_path, demo_user: User) -> Store:
+    """Every endpoint test runs twice: against the dict, and against SQLite.
+
+    Issue #19 replaced the in-memory store with a real database. The promise of
+    the `Store` protocol is that nothing above it can tell which one it has, and
+    the only way to keep that promise honest is to run the API against both.
+    """
+    if request.param == "memory":
+        store = InMemoryStore()
+    else:
+        store = SqliteStore(tmp_path / "api.sqlite3")
+    store.save_user(demo_user)
+    return store
 
 
-@pytest.fixture
-def seeded_store() -> InMemoryStore:
+@pytest.fixture(params=["memory", "sqlite"])
+def seeded_store(request, tmp_path) -> Store:
     """The development fixtures from _docs/specs.md §31, plus the demo account."""
-    return InMemoryStore.seeded()
+    store = InMemoryStore() if request.param == "memory" else SqliteStore(tmp_path / "seeded.sqlite3")
+    store.seed()
+    return store
 
 
-def _client(store: InMemoryStore) -> TestClient:
+def _client(store: Store) -> TestClient:
     app.dependency_overrides[get_store] = lambda: store
     return TestClient(app)
 
 
 @pytest.fixture
-def anonymous_client(store: InMemoryStore) -> TestClient:
+def anonymous_client(store: Store) -> TestClient:
     with _client(store) as test_client:
         yield test_client
     app.dependency_overrides.clear()
 
 
 @pytest.fixture
-def client(store: InMemoryStore, demo_user: User) -> TestClient:
+def client(store: Store, demo_user: User) -> TestClient:
     with _client(store) as test_client:
         token, _ = auth.issue_token(store, demo_user)
         test_client.headers["Authorization"] = f"Bearer {token}"
@@ -62,7 +75,7 @@ def client(store: InMemoryStore, demo_user: User) -> TestClient:
 
 
 @pytest.fixture
-def seeded_client(seeded_store: InMemoryStore) -> TestClient:
+def seeded_client(seeded_store: Store) -> TestClient:
     with _client(seeded_store) as test_client:
         user = seeded_store.get_user_by_email("researcher@example.com")
         token, _ = auth.issue_token(seeded_store, user)

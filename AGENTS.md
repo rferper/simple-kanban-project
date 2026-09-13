@@ -55,7 +55,8 @@ The frontend has no toolchain and no test runner of its own
 | `openapi.yaml` | the API contract, derived from the frontend client (#7) |
 | `frontend/` | the whole UI, talking to the API — start at its README |
 | `backend/` | the FastAPI API, on a mock database — start at its README |
-| `backend/app/store.py` | **the storage seam** — swap the mock here |
+| `backend/app/store.py` | **the storage seam** — the `Store` protocol |
+| `backend/app/sqlite_store.py` | the SQLite implementation of it |
 | `backend/app/auth.py` | password hashing, bearer tokens, `current_user` |
 | `backend/tests/` | written before the endpoints; the contract test guards drift |
 | `frontend/src/api/client.js` | **the only module that talks to a backend** |
@@ -73,7 +74,8 @@ The frontend has no toolchain and no test runner of its own
 - `openapi.yaml` and the running API must agree. `backend/tests/test_contract.py`
   checks both directions — change the contract and the code in the same commit.
 - Backend storage goes through the `Store` protocol. Routers and
-  `app/service.py` must not know how anything is stored.
+  `app/service.py` must not know how anything is stored. Every implementation
+  must pass `tests/test_store.py`, which runs one contract against all of them.
 - The API is closed by default: every endpoint requires a bearer token except
   `POST /api/auth/login`. Adding a public endpoint means changing `PUBLIC` in
   `backend/tests/test_contract.py`, which is deliberately a visible edit.
