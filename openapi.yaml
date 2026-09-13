@@ -1,0 +1,801 @@
+openapi: 3.1.0
+
+info:
+  title: NextLane API
+  version: 0.1.0
+  description: |
+    The backend contract for NextLane — a career-pivot Kanban for academics
+    moving into industry.
+
+    This document was derived from `frontend/src/api/client.js`, which is the
+    only module in the frontend that talks to a backend and which already
+    annotated every method with the call it stood in for. The frontend is
+    therefore the reference implementation of this contract's client side.
+
+    Two conventions inherited from that client, and deliberately kept:
+
+    * **Field names are camelCase**, matching the domain vocabulary in
+      `_docs/specs.md` §28 and the frontend's card model.
+    * **A job card is a card**, carrying an optional `job` object rather than
+      living at its own resource (`_docs/specs.md` §24, `_docs/decisions.md` #5).
+
+    ## Authentication
+
+    **Every endpoint requires a bearer token except `POST /api/auth/login`.**
+
+    NextLane holds someone's job search — which roles they want, what rejected
+    them, what they are quietly learning in order to leave their current job.
+    There is no part of this API that is safe to leave open, so the default is
+    closed and login is the single exception.
+
+        POST /api/auth/login  {"email": "...", "password": "..."}
+        → {"token": "...", "expiresAt": "...", "user": {...}}
+
+        Authorization: Bearer <token>     on every other call
+
+    Tokens are opaque, random, held server-side, and expire after 14 days.
+    `POST /api/auth/logout` revokes one immediately.
+
+    Authentication decides **who may open the workspace**. It does not partition
+    the data: `_docs/specs.md` §33 rules out multi-user collaboration and §26
+    notes the first user is the developer, so all authenticated users see one
+    shared board. Per-user data would be a deliberate later change.
+
+    The frontend implements this: `frontend/src/api/client.js` holds the token,
+    attaches it to every call, and drops it and shows the sign-in screen when a
+    401 comes back.
+
+servers:
+  - url: http://localhost:8001
+    description: Local development
+
+# Closed by default. Only POST /api/auth/login opts out, with `security: []`.
+security:
+  - bearerAuth: []
+
+tags:
+  - name: auth
+    description: Sign in and out. The only public endpoint lives here.
+  - name: cards
+    description: The one card model shared by all three boards (§10).
+  - name: links
+    description: Job ↔ learning relationships (§9.3).
+  - name: preferences
+    description: The two settings the product has (§20).
+  - name: ai
+    description: Job-advert extraction (§15). Isolated — the rest works without it.
+
+paths:
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Exchange an email and password for a bearer token
+      description: |
+        The only endpoint that does not require a token — it is how you get one.
+
+        A wrong password and an unknown email fail identically, with the same
+        status and the same body, so this cannot be used to discover which
+        addresses have accounts.
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200":
+          description: A token, when it expires, and who it belongs to.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "401":
+          description: Those details don't match an account.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/auth/me:
+    get:
+      tags: [auth]
+      summary: The signed-in user
+      description: Never includes the password hash.
+      operationId: me
+      responses:
+        "200":
+          description: The signed-in user.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserPublic" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Revoke the token used to make this call
+      description: |
+        The token is deleted, not marked — revocation is immediate. Other
+        sessions belonging to the same user are untouched, so signing out of one
+        device does not sign you out of another.
+      operationId: logout
+      responses:
+        "204": { description: The token is no longer valid. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/cards:
+    get:
+      tags: [cards]
+      summary: Every card, across all three areas
+      operationId: listCards
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "200":
+          description: All cards.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Card" }
+
+    post:
+      tags: [cards]
+      summary: Create a card
+      description: |
+        Only `title` and `area` are required (§13, §29). `status` defaults to the
+        area's first column. A card with `area: JOB_SEARCH` may carry a `job`
+        object; one with `area: LEARNING` may carry `relatedJobCardIds`.
+      operationId: createCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardCreate" }
+      responses:
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "201":
+          description: The created card.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/cards/{cardId}:
+    parameters:
+      - $ref: "#/components/parameters/CardId"
+
+    get:
+      tags: [cards]
+      summary: One card
+      operationId: getCard
+      responses:
+        "200":
+          description: The card.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    patch:
+      tags: [cards]
+      summary: Update a card
+      description: |
+        A partial update — only the fields present are changed. This one
+        endpoint serves several distinct interactions in the UI:
+
+        * moving a card between columns (`status`), the drag-and-drop path (§14);
+        * the planned-this-week toggle (`plannedThisWeek`), which drives the
+          weekly workload (§10.5, §22);
+        * marking complete, by setting `status` to the area's done column (§12.1).
+
+        `completedAt` is managed by the server: it is stamped when the card
+        enters its area's done column and cleared when it leaves.
+
+        A nested `job` object is merged field-by-field into the existing job
+        details rather than replacing them.
+      operationId: updateCard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CardUpdate" }
+      responses:
+        "200":
+          description: The updated card.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+    delete:
+      tags: [cards]
+      summary: Delete a card
+      description: |
+        Any links this card was part of are removed from the cards at the other
+        end, so no card is left pointing at something that no longer exists.
+      operationId: deleteCard
+      responses:
+        "204": { description: Deleted. }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/cards/{cardId}/job:
+    parameters:
+      - $ref: "#/components/parameters/CardId"
+
+    patch:
+      tags: [cards]
+      summary: Update a job card's application details
+      description: |
+        A partial update of the `job` object only. Also the archive path: setting
+        `outcome` to `REJECTED`, `WITHDRAWN` or `DECLINED` takes the application
+        off the board while keeping everything it held (§8.1, §16.8).
+      operationId: updateJobDetails
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobDetailsUpdate" }
+      responses:
+        "200":
+          description: The updated card.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Card" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: The card is not a job card.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/learning/{learningId}/jobs/{jobId}:
+    parameters:
+      - $ref: "#/components/parameters/LearningId"
+      - $ref: "#/components/parameters/JobId"
+
+    put:
+      tags: [links]
+      summary: Link a learning card to a job card
+      description: |
+        Idempotent. Both ends are kept in step: the learning card's
+        `relatedJobCardIds` and the job's `job.relatedLearningCardIds`.
+      operationId: linkLearningToJob
+      responses:
+        "200": { $ref: "#/components/responses/LinkedPair" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/WrongAreaForLink" }
+
+    delete:
+      tags: [links]
+      summary: Unlink a learning card from a job card
+      description: Idempotent — unlinking something already unlinked succeeds.
+      operationId: unlinkLearningFromJob
+      responses:
+        "200": { $ref: "#/components/responses/LinkedPair" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/WrongAreaForLink" }
+
+  /api/preferences:
+    get:
+      tags: [preferences]
+      summary: Read preferences
+      operationId: getPreferences
+      responses:
+        "200":
+          description: The preferences.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Preferences" }
+
+    patch:
+      tags: [preferences]
+      summary: Update preferences
+      operationId: updatePreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PreferencesUpdate" }
+      responses:
+        "200":
+          description: The updated preferences.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Preferences" }
+        "422": { $ref: "#/components/responses/ValidationError" }
+
+  /api/ai/extract-job-advert:
+    post:
+      tags: [ai]
+      summary: Extract structured job details from a pasted advert
+      description: |
+        Returns a **draft** for the user to check, never a saved card (§15.3).
+        Nothing here is persisted; the client shows an editable preview and then
+        creates the card through `POST /api/cards` like any other.
+
+        Fit is never scored automatically (§15.2). `missing` names the fields
+        that could not be found, so the client can point at them.
+
+        If the whole endpoint is unavailable, the rest of the API is unaffected
+        and the product remains fully usable (§27).
+      operationId: extractJobAdvert
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ExtractionRequest" }
+      responses:
+        "200":
+          description: What could be extracted.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ExtractionResult" }
+        "422":
+          description: |
+            The advert could not be read reliably — too short to work with. The
+            client keeps the pasted text and offers manual creation (§15.3).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: |
+        The `token` from `POST /api/auth/login`, sent as
+        `Authorization: Bearer <token>`.
+
+        Opaque and random (256 bits from the OS CSPRNG), held server-side, and
+        valid for 14 days. Not a JWT: a JWT cannot be revoked without keeping
+        the very same server-side list, and `POST /api/auth/logout` revokes
+        immediately.
+
+  parameters:
+    CardId:
+      name: cardId
+      in: path
+      required: true
+      schema: { type: string }
+
+    LearningId:
+      name: learningId
+      in: path
+      required: true
+      schema: { type: string }
+
+    JobId:
+      name: jobId
+      in: path
+      required: true
+      schema: { type: string }
+
+  responses:
+    Unauthorized:
+      description: |
+        No token, an unknown token, or an expired one. The client should send
+        the user to sign in.
+      headers:
+        WWW-Authenticate:
+          schema: { type: string }
+          description: Always `Bearer`.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    NotFound:
+      description: No such card.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    ValidationError:
+      description: The payload failed validation (§29).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    LinkedPair:
+      description: |
+        Both affected cards, learning card first, so the client can update each
+        end without refetching.
+      content:
+        application/json:
+          schema:
+            type: array
+            minItems: 2
+            maxItems: 2
+            items: { $ref: "#/components/schemas/Card" }
+
+    WrongAreaForLink:
+      description: One of the ids is not a card of the area the link requires.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Area:
+      type: string
+      enum: [CURRENT_JOB, JOB_SEARCH, LEARNING]
+
+    Priority:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, URGENT]
+
+    Fit:
+      type: string
+      enum: [LOW, MEDIUM, HIGH, DREAM]
+      description: Presented in friendly wording, never as an objective score (§11.1).
+
+    WorkMode:
+      type: string
+      enum: [ONSITE, HYBRID, REMOTE, UNKNOWN]
+
+    Outcome:
+      type: string
+      enum: [ACTIVE, REJECTED, WITHDRAWN, ACCEPTED, DECLINED]
+
+    Status:
+      type: string
+      description: |
+        The union of every board's columns (§28). Which values are legal depends
+        on the card's area, and the server rejects a status that does not belong
+        to it:
+
+        * `CURRENT_JOB` — BACKLOG, THIS_WEEK, IN_PROGRESS, WAITING, DONE
+        * `JOB_SEARCH` — INTERESTING, PREPARING, APPLIED, INTERVIEW, OFFER
+        * `LEARNING` — IDEAS, PLANNED, LEARNING, PRACTISING, DONE
+      enum:
+        - BACKLOG
+        - THIS_WEEK
+        - IN_PROGRESS
+        - WAITING
+        - DONE
+        - INTERESTING
+        - PREPARING
+        - APPLIED
+        - INTERVIEW
+        - OFFER
+        - IDEAS
+        - PLANNED
+        - LEARNING
+        - PRACTISING
+
+    Subtask:
+      type: object
+      required: [id, title, done]
+      properties:
+        id: { type: string }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        done: { type: boolean }
+
+    SubtaskInput:
+      type: object
+      required: [title]
+      properties:
+        id:
+          type: string
+          description: Omit to have one assigned.
+        title: { type: string, minLength: 1, maxLength: 200 }
+        done: { type: boolean, default: false }
+
+    JobDetails:
+      type: object
+      description: The structured application record on a JOB_SEARCH card (§11).
+      required:
+        - company
+        - role
+        - jobUrl
+        - location
+        - salaryText
+        - workMode
+        - contactName
+        - contactDetails
+        - jobDescription
+        - requirements
+        - niceToHave
+        - applicationDeadline
+        - interviewDate
+        - cvVersion
+        - fit
+        - outcome
+        - notes
+        - relatedLearningCardIds
+      properties:
+        company: { type: string }
+        role: { type: string }
+        jobUrl: { type: string }
+        location: { type: string }
+        salaryText: { type: string }
+        workMode: { $ref: "#/components/schemas/WorkMode" }
+        contactName: { type: string }
+        contactDetails: { type: string }
+        jobDescription:
+          type: string
+          description: The pasted advert, kept verbatim.
+        requirements:
+          type: array
+          items: { type: string }
+        niceToHave:
+          type: array
+          items: { type: string }
+        applicationDeadline:
+          oneOf: [{ type: string, format: date }, { type: "null" }]
+        interviewDate:
+          oneOf: [{ type: string, format: date }, { type: "null" }]
+        cvVersion: { type: string }
+        fit: { $ref: "#/components/schemas/Fit" }
+        outcome: { $ref: "#/components/schemas/Outcome" }
+        notes: { type: string }
+        relatedLearningCardIds:
+          type: array
+          items: { type: string }
+          description: Maintained by the link endpoints, not written directly.
+
+    JobDetailsInput:
+      type: object
+      description: Every field optional; anything omitted takes its default.
+      properties:
+        company: { type: string }
+        role: { type: string }
+        jobUrl: { type: string }
+        location: { type: string }
+        salaryText: { type: string }
+        workMode: { $ref: "#/components/schemas/WorkMode" }
+        contactName: { type: string }
+        contactDetails: { type: string }
+        jobDescription: { type: string }
+        requirements:
+          type: array
+          items: { type: string }
+        niceToHave:
+          type: array
+          items: { type: string }
+        applicationDeadline:
+          oneOf: [{ type: string, format: date }, { type: "null" }]
+        interviewDate:
+          oneOf: [{ type: string, format: date }, { type: "null" }]
+        cvVersion: { type: string }
+        fit: { $ref: "#/components/schemas/Fit" }
+        outcome: { $ref: "#/components/schemas/Outcome" }
+        notes: { type: string }
+
+    JobDetailsUpdate:
+      allOf:
+        - $ref: "#/components/schemas/JobDetailsInput"
+      description: |
+        A partial update — only the fields present are changed.
+        `relatedLearningCardIds` is not accepted here; use the link endpoints.
+
+    Card:
+      type: object
+      required:
+        - id
+        - title
+        - description
+        - area
+        - status
+        - priority
+        - deadline
+        - estimatedHours
+        - plannedThisWeek
+        - tags
+        - subtasks
+        - createdAt
+        - updatedAt
+        - completedAt
+      properties:
+        id: { type: string }
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        area: { $ref: "#/components/schemas/Area" }
+        status: { $ref: "#/components/schemas/Status" }
+        priority: { $ref: "#/components/schemas/Priority" }
+        deadline:
+          oneOf: [{ type: string, format: date }, { type: "null" }]
+        estimatedHours:
+          oneOf: [{ type: number, minimum: 0, maximum: 200 }, { type: "null" }]
+          description: Hours. Null means unestimated, which is never counted as zero (§22).
+        plannedThisWeek:
+          type: boolean
+          description: Contributes to the weekly workload calculation (§10.5).
+        tags:
+          type: array
+          items: { type: string }
+        subtasks:
+          type: array
+          items: { $ref: "#/components/schemas/Subtask" }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        completedAt:
+          oneOf: [{ type: string, format: date-time }, { type: "null" }]
+          description: Server-managed. Stamped on entering the done column, cleared on leaving.
+        job:
+          oneOf:
+            - $ref: "#/components/schemas/JobDetails"
+            - type: "null"
+          description: Present only on JOB_SEARCH cards.
+        relatedJobCardIds:
+          type: array
+          items: { type: string }
+          description: Present only on LEARNING cards. Maintained by the link endpoints.
+
+    CardCreate:
+      type: object
+      required: [title, area]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string, default: "" }
+        area: { $ref: "#/components/schemas/Area" }
+        status:
+          $ref: "#/components/schemas/Status"
+          description: Defaults to the area's first column.
+        priority:
+          $ref: "#/components/schemas/Priority"
+          default: MEDIUM
+        deadline:
+          oneOf: [{ type: string, format: date }, { type: "null" }]
+        estimatedHours:
+          oneOf: [{ type: number, minimum: 0, maximum: 200 }, { type: "null" }]
+        plannedThisWeek: { type: boolean, default: false }
+        tags:
+          type: array
+          items: { type: string }
+        subtasks:
+          type: array
+          items: { $ref: "#/components/schemas/SubtaskInput" }
+        job:
+          $ref: "#/components/schemas/JobDetailsInput"
+          description: Accepted only when area is JOB_SEARCH.
+        relatedJobCardIds:
+          type: array
+          items: { type: string }
+          description: Accepted only when area is LEARNING.
+
+    CardUpdate:
+      type: object
+      description: A partial update — only the fields present are changed.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        description: { type: string }
+        status: { $ref: "#/components/schemas/Status" }
+        priority: { $ref: "#/components/schemas/Priority" }
+        deadline:
+          oneOf: [{ type: string, format: date }, { type: "null" }]
+        estimatedHours:
+          oneOf: [{ type: number, minimum: 0, maximum: 200 }, { type: "null" }]
+        plannedThisWeek: { type: boolean }
+        tags:
+          type: array
+          items: { type: string }
+        subtasks:
+          type: array
+          items: { $ref: "#/components/schemas/SubtaskInput" }
+        job:
+          $ref: "#/components/schemas/JobDetailsUpdate"
+          description: Merged into the existing job details. Ignored on non-job cards.
+
+    Preferences:
+      type: object
+      required: [displayName, weeklyAvailableHours]
+      properties:
+        displayName: { type: string, maxLength: 60 }
+        weeklyAvailableHours:
+          oneOf: [{ type: number, minimum: 0, maximum: 168 }, { type: "null" }]
+          description: Optional. A capacity indicator, not a schedule (§5.4).
+
+    PreferencesUpdate:
+      type: object
+      properties:
+        displayName: { type: string, maxLength: 60 }
+        weeklyAvailableHours:
+          oneOf: [{ type: number, minimum: 0, maximum: 168 }, { type: "null" }]
+
+    ExtractionRequest:
+      type: object
+      required: [advert]
+      properties:
+        advert:
+          type: string
+          description: The pasted advert text.
+
+    ExtractedJob:
+      type: object
+      required:
+        - company
+        - role
+        - location
+        - salaryText
+        - workMode
+        - applicationDeadline
+        - requirements
+        - niceToHave
+        - summary
+        - tags
+      properties:
+        company: { type: string }
+        role: { type: string }
+        location: { type: string }
+        salaryText: { type: string }
+        workMode: { $ref: "#/components/schemas/WorkMode" }
+        applicationDeadline:
+          oneOf: [{ type: string, format: date }, { type: "null" }]
+        requirements:
+          type: array
+          items: { type: string }
+        niceToHave:
+          type: array
+          items: { type: string }
+        summary: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+
+    ExtractionResult:
+      type: object
+      required: [extracted, missing, confidence]
+      properties:
+        extracted: { $ref: "#/components/schemas/ExtractedJob" }
+        missing:
+          type: array
+          items: { type: string }
+          description: Field names that could not be found, for the client to highlight.
+        confidence:
+          type: string
+          enum: [good, partial]
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Case-insensitive; surrounding whitespace is trimmed.
+        password:
+          type: string
+          format: password
+          writeOnly: true
+
+    LoginResponse:
+      type: object
+      required: [token, expiresAt, user]
+      properties:
+        token:
+          type: string
+          description: "Send as `Authorization: Bearer <token>`."
+        expiresAt: { type: string, format: date-time }
+        user: { $ref: "#/components/schemas/UserPublic" }
+
+    UserPublic:
+      type: object
+      description: |
+        What a client is allowed to see of a user. The password hash is never
+        part of any response.
+      required: [id, email, displayName]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        displayName: { type: string, maxLength: 60 }
+
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          description: Safe to show a user verbatim (§37).
+        kind:
+          type: string
+          description: A coarse category, e.g. `not_found`, `validation`, `ai`.
