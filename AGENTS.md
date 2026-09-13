@@ -47,6 +47,7 @@ The frontend has no toolchain and no test runner of its own
 | Path | What it is |
 | --- | --- |
 | `_docs/specs.md` | the product specification — the source of truth |
+| `_docs/tasks.md` | the backlog, mirrored to GitHub issues #1–#23 |
 | `_docs/process.md` | how work moves from issue to merged |
 | `_docs/decisions.md` | calls already settled; read before re-litigating one |
 | `_docs/task-template.md` | the shape a groomed issue takes |
@@ -108,6 +109,7 @@ itself. The full lifecycle is in `_docs/process.md`.
 
 - `_docs/specs.md` — the product, including §33 non-goals, §41 development
   order, §42 definition of done, and §43 the agent operating rules
+- `_docs/tasks.md` — the backlog; #1–#18 are done, real work starts at #19
 - `_docs/process.md` — the lifecycle, the branch convention, the pre-close checks
 - `_docs/decisions.md` — settled calls and their reasoning
 - `_docs/task-template.md` — read before writing an issue

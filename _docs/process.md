@@ -2,14 +2,13 @@
 
 ## One issue at a time
 
-The backlog lives in GitHub issues, where the issue number is the task number.
-Pick one, finish it, close it. Do not open a second until the first is closed or
-explicitly parked.
+The backlog is `_docs/tasks.md`, mirrored to GitHub issues #1–#23, where the
+issue number is the task number. Pick one, finish it, close it. Do not open a
+second until the first is closed or explicitly parked.
 
-The backlog does not exist yet. It is derived from `_docs/specs.md` §41,
-Recommended Development Order — nine phases, in order, each one cut into issues
-small enough to finish in one sitting. Phase 1 is a static UI on seed data;
-nothing is wired to storage until Phase 3.
+Issues #1–#18 describe how the repository was built and are already implemented;
+they are kept because the backlog is also the map of how the product was made.
+The work that is actually outstanding starts at #19.
 
 ## Before starting
 
