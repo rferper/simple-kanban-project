@@ -213,6 +213,9 @@ class ExtractionResult(Wire):
     extracted: ExtractedJob
     missing: list[str] = Field(default_factory=list)
     confidence: str = "good"
+    #: Which reader produced this - "model" or "heuristic". A regex's reading and
+    #: a model's are not the same quality, and the client should be able to tell.
+    source: str = "heuristic"
 
 
 # --------------------------------------------------------------------- auth

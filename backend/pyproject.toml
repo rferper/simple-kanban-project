@@ -7,6 +7,9 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
+    # Job-advert extraction (issue #20). The API runs without it configured -
+    # see app/ai.py - but the official SDK is how the model call is made.
+    "anthropic>=0.40",
 ]
 
 [dependency-groups]

@@ -744,7 +744,7 @@ components:
 
     ExtractionResult:
       type: object
-      required: [extracted, missing, confidence]
+      required: [extracted, missing, confidence, source]
       properties:
         extracted: { $ref: "#/components/schemas/ExtractedJob" }
         missing:
@@ -754,6 +754,15 @@ components:
         confidence:
           type: string
           enum: [good, partial]
+        source:
+          type: string
+          enum: [model, heuristic]
+          description: |
+            Which reader produced this. `model` is a Claude call; `heuristic` is
+            the built-in parser, used when the server has no API key configured.
+            A regex's reading and a model's are not the same quality, and a
+            client should be able to tell them apart — a misconfigured
+            deployment should not look like a working one.
 
     LoginRequest:
       type: object

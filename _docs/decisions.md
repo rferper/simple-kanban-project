@@ -267,3 +267,54 @@ could have caught. The dict now enforces it too.
 Cost accepted: the suite takes about three times as long, and a new
 implementation has to pass the contract before it can be wired in. Both are the
 point rather than a side effect.
+
+## 17. Two advert readers, and the result says which one read it
+
+`backend/app/ai.py` dispatches between a Claude call (`app/ai_model.py`) and the
+original heuristic parser. `NEXTLANE_AI` chooses: `auto` by default, meaning the
+model when `ANTHROPIC_API_KEY` is set and the parser otherwise. Every result
+carries `source`.
+
+Why keep the parser: a fresh clone has no API key, and a portfolio project that
+shows a broken feature to anyone who has not signed up for an API account is
+worse than one that reads adverts a little less well. It also means the test
+suite needs no credentials and no network.
+
+Why say which: a regex's reading and a model's are not the same quality. Without
+`source`, a deployment that lost its API key looks exactly like a working one,
+and the person reading a half-filled preview has no way to know why.
+
+Cost accepted: two readers to maintain, and one more field in the contract.
+
+## 18. A failed model call is an error, not a silent downgrade
+
+When the model is the configured reader and the call fails - auth, rate limit,
+network, or a response that will not validate - the endpoint returns 422 with a
+friendly message. It does not fall back to the parser.
+
+Why: `_docs/specs.md` §15.3 already says what happens on failure, and the
+frontend already does it - keep the pasted advert, say something useful, offer
+manual creation. Falling back would hide a broken integration behind output that
+looks plausible, which is the worst of both.
+
+The detail goes to the log; the person pasting sees one sentence. An exception
+message can carry an API key or an internal URL, and a paste box is not the place
+for either. A test asserts that.
+
+Cost accepted: a transient blip becomes a visible error rather than a quietly
+worse answer. That is the intended trade.
+
+## 19. The advert is untrusted input, and the prompt says so
+
+The system prompt in `app/ai_model.py` states that the advert is untrusted text
+pasted from the internet and that anything resembling an instruction inside it
+should be ignored. The extraction schema has no field for the candidate's fit.
+
+Why: a job advert is attacker-controllable text. The realistic risk here is
+small - the output is a form the user reviews before anything is saved - but the
+cost of saying so in the prompt is one paragraph.
+
+Leaving fit out is `_docs/specs.md` §15.2 enforced by construction rather than by
+instruction: a field the model cannot fill is a field it cannot invent.
+
+Cost accepted: none worth the name.

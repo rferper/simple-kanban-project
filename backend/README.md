@@ -115,6 +115,41 @@ backend/
   removes it from the other end. No card is left pointing at something that no
   longer exists.
 
+## Reading job adverts
+
+Two readers, one contract (`app/ai.py`):
+
+| `NEXTLANE_AI` | Reader |
+| --- | --- |
+| `auto` (default) | the model when `ANTHROPIC_API_KEY` is set, the parser otherwise |
+| `model` | always the model → `app/ai_model.py`, a Claude call with a validated schema |
+| `heuristic` | always the built-in parser |
+
+```sh
+ANTHROPIC_API_KEY=sk-ant-... uv run uvicorn app.main:app --port 8001
+```
+
+Every result says which read it, in `source`. A regex's reading and a model's are
+not the same quality, and a deployment that lost its API key should not quietly
+look like a working one.
+
+**The parser is kept, not deleted.** A fresh clone has no API key, and a
+portfolio project that shows a broken feature to anyone who has not signed up for
+an API account is worse than one that reads adverts a little less well. It also
+means the test suite needs no credentials and no network.
+
+**A failed model call is an error, not a downgrade.** When the model is the
+configured reader and the call fails, the endpoint returns 422 with a friendly
+message; §15.3 already says what happens next: the client keeps the pasted
+text and offers manual entry. Falling back to the regex would hide a broken
+integration behind output that looks plausible.
+
+The advert is untrusted text pasted from the internet, and the system prompt says
+so: an advert containing instructions is an advert to extract, not orders to
+follow. The schema has no field for the candidate's fit, because §15.2 says
+the app must not judge suitability - a field the model cannot fill is one it
+cannot invent.
+
 ## Authentication
 
 Every endpoint requires a bearer token except `POST /api/auth/login`.
@@ -164,6 +199,8 @@ is a deliberate change rather than a surprise.
 - **No account management.** There is one seeded account and no way to register,
   change a password or reset one. §26 warns against spending half the project on
   account management, and nothing in the product needs more than this yet.
-- **The AI endpoint is a regex parser**, not a model call. It is good enough to
-  make the paste → preview → edit → confirm flow real, which is the part that
-  matters: nothing it returns is ever saved without the user seeing it.
+- **The model call is unverified against the real API.** The integration is
+  written and tested against a stub, but no Anthropic API key was available
+  when it was built, so nobody has yet watched Claude read an advert through
+  it. The first person with a key should try it and say whether the prompt
+  holds up.
