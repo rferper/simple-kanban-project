@@ -12,10 +12,9 @@ mostly independent of each other.
 Read `_docs/process.md` before starting one, and `_docs/decisions.md` before
 re-litigating anything it has already settled.
 
-> **Status.** Tasks 1–18 describe how this repository was built, and are already
-> implemented — see `git log`. They are recorded here because the backlog is
-> also the map of how the product got made, and because the workflow in
-> `_docs/process.md` runs on issues. Anything genuinely outstanding starts at 19.
+> **Status.** Tasks 1–19 are implemented — see `git log`. Tasks 1–18 describe how
+> this repository was built and are recorded because the backlog is also the map
+> of how the product got made. Anything still outstanding starts at 20.
 
 ---
 
@@ -206,10 +205,6 @@ a rejected token in one place so an expired session is a single transition
 rather than a wall of failed requests. Delete any mock the frontend was standing
 on.
 
----
-
-# Open
-
 ## 19. Replace the in-memory store with a real database
 
 Goal: The board survives a restart.
@@ -219,6 +214,10 @@ real database, and swap it in at the one place the application resolves storage.
 Nothing in the service layer or the routers should change — if either needs
 editing, the seam is in the wrong place. Add migrations and a way to seed a
 fresh database with the development fixtures.
+
+---
+
+# Open
 
 ## 20. Replace the advert parser with a real model call
 

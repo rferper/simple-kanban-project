@@ -54,6 +54,11 @@ class Store(Protocol):
 
     def delete_tokens_for(self, user_id: str) -> int: ...
 
+    # lifecycle
+    def seed(self) -> None: ...
+
+    def close(self) -> None: ...
+
 
 class InMemoryStore:
     """The mock database. Lives for as long as the process does."""
@@ -79,11 +84,27 @@ class InMemoryStore:
     @classmethod
     def seeded(cls) -> InMemoryStore:
         """Loaded with the fixtures from `_docs/specs.md` §31 and the demo account."""
+        store = cls()
+        store.seed()
+        return store
+
+    def seed(self) -> None:
+        """Fill an empty store with the §31 fixtures. Does nothing otherwise."""
         from app.auth import build_demo_user
         from app.seed import build_seed
 
+        if self._cards:
+            return
+
         cards, preferences = build_seed()
-        return cls(cards=cards, preferences=preferences, users=[build_demo_user()])
+        for card in cards:
+            self.save_card(card)
+        self.save_preferences(preferences)
+        if self.get_user_by_email("researcher@example.com") is None:
+            self.save_user(build_demo_user())
+
+    def close(self) -> None:
+        """Nothing to close. Here so the protocol is honest about both."""
 
     # ------------------------------------------------------------------ cards
 
@@ -124,6 +145,13 @@ class InMemoryStore:
         return None
 
     def save_user(self, user: User) -> User:
+        # SQLite enforces this with a unique index; without it here the two
+        # implementations would disagree, and the protocol would be a fiction.
+        wanted = user.email.strip().lower()
+        for existing in self._users.values():
+            if existing.id != user.id and existing.email.strip().lower() == wanted:
+                raise ValueError(f"another account already uses {user.email}")
+
         self._users[user.id] = user.model_copy(deep=True)
         return user.model_copy(deep=True)
 

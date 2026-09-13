@@ -5,6 +5,8 @@ what they are quietly learning in order to leave. These tests are about keeping
 that shut.
 """
 
+from datetime import timedelta
+
 import pytest
 
 from app import auth
@@ -163,10 +165,12 @@ class TestProtectedEndpoints:
     def test_a_valid_token_gets_through(self, client):
         assert client.get("/api/cards").status_code == 200
 
-    def test_a_token_for_a_deleted_user_is_401(self, anonymous_client, store, demo_user: User):
-        token, _ = auth.issue_token(store, demo_user)
-        store._users.clear()
-        anonymous_client.headers["Authorization"] = f"Bearer {token}"
+    def test_a_token_for_a_user_who_is_gone_is_401(self, anonymous_client, store):
+        """A session outliving its account must not be a way in."""
+        from app.domain import now
+
+        store.save_token("orphan-token", "user-who-never-existed", now() + timedelta(days=1))
+        anonymous_client.headers["Authorization"] = "Bearer orphan-token"
         assert anonymous_client.get("/api/cards").status_code == 401
 
 
@@ -248,7 +252,9 @@ class TestWhatAuthenticationIsNot:
 
         card = make_card(client, title="Only I can see this")
 
-        second = auth.build_demo_user().model_copy(update={"id": "user-second"})
+        second = auth.build_demo_user().model_copy(
+            update={"id": "user-second", "email": "colleague@example.com"}
+        )
         store.save_user(second)
         token, _ = auth.issue_token(store, second)
         client.headers["Authorization"] = f"Bearer {token}"

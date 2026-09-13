@@ -116,19 +116,18 @@ Cost accepted: the API is shaped by one client's needs. `PATCH /api/cards/{id}`
 carrying drag-and-drop, the weekly-planning toggle and completion all at once is
 a frontend convenience, not a REST purist's design.
 
-## 8. The database is a Protocol with one mock implementation
+## 8. The database is a Protocol, so the implementation can change
 
-`backend/app/store.py` defines a `Store` Protocol; `InMemoryStore`
-is the only implementation and it is a few dicts. `get_store` in
-`app/dependencies.py` is the swap point, and the tests already exercise it —
-every test overrides that dependency with its own fresh repository.
+`backend/app/store.py` defines a `Store` Protocol. It began with one
+implementation, a dict, and `get_store` in `app/dependencies.py` is the swap
+point. Issue #19 added the second — see #15.
 
 Why: it was explicitly a mock from the start, so the seam had to be real rather
-than something to be retrofitted. Making the tests use the same seam proves it
-works rather than asserting that it will.
+than something to be retrofitted. Making the tests use the same seam proved it
+worked rather than asserting that it would.
 
-Cost accepted: restarting the server loses everything, and the in-memory store
-copies objects in and out on every call, which a real database would not need.
+Cost accepted at the time: restarting the server lost everything. That is what
+#15 fixed, and the seam is why it was a contained change.
 
 ## 9. `completedAt` is server-owned
 
@@ -228,3 +227,43 @@ the client, it is one transition to the sign-in screen.
 Cost accepted: a script running on this origin could read the token. That is the
 known cost of `localStorage`, and the reason this is decision-worthy rather than
 a detail.
+
+## 15. SQLite through the standard library, with a normalised schema
+
+`backend/app/sqlite_store.py` implements the `Store` protocol against SQLite
+using `sqlite3` from the standard library. No ORM, no new dependency. The schema
+is normalised — tables for cards, tags, subtasks, job details, requirements and
+each side of the job to learning links — rather than a JSON document in a column.
+
+Why the standard library: `AGENTS.md` says not to add a dependency without
+asking, and this project already prefers it — scrypt rather than passlib, plain
+ES modules rather than a framework. The schema is small enough that the SQL is
+clearer than the machinery that would avoid writing it.
+
+Why normalised: `_docs/specs.md` §24 describes real relations. A JSON blob would
+store the data but hide every relation from the database, which is most of what
+having a database is for.
+
+Cost accepted: hand-written SQL, and a schema change means a migration rather
+than nothing. `SCHEMA_VERSION` exists so an older database is refused loudly
+instead of being read as though the columns still mean what they used to.
+
+## 16. Both store implementations are kept interchangeable by the test suite
+
+`tests/test_store.py` runs one contract against every implementation, and
+`tests/conftest.py` parametrises the entire API suite over both — so every
+endpoint test runs twice, once on the dict and once on SQLite.
+
+Why: "nothing above the seam can tell the difference" is a claim, and a claim
+about behaviour is worth exactly as much as the test that checks it. The in-memory
+store still earns its place: it is what `NEXTLANE_DB=:memory:` selects, and it
+keeps the suite fast.
+
+It paid for itself the first time it ran. Putting the API tests on SQLite found
+that the dict silently allowed two accounts to share an email address while
+SQLite's unique index refused — a divergence neither implementation's own tests
+could have caught. The dict now enforces it too.
+
+Cost accepted: the suite takes about three times as long, and a new
+implementation has to pass the contract before it can be wired in. Both are the
+point rather than a side effect.
