@@ -1,12 +1,12 @@
 # NextLane
 
-A responsive web Kanban for academics moving into industry.
+A responsive web Kanban for job searchers.
 
 Three connected areas — **Current Job**, **Job Search** and **Learning / Pivot** —
 under one dashboard that answers a single question:
 
 > What should I work on today to maximise my chances of successfully moving into
-> industry without neglecting my current job?
+> another job without neglecting my current one?
 
 Job Search is a real application tracker, not a column of to-dos: it carries the
 role, the company, the fit, the stage, and the learning work linked to it. The
