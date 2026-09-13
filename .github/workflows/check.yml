@@ -1,0 +1,65 @@
+name: check
+
+# Every push and every pull request. A suite that only runs when someone
+# remembers is a suite that is already broken.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A new push to the same branch makes the previous run irrelevant.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint, types and tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked
+        working-directory: backend
+
+      # Deliberately run through the Makefile rather than repeating its
+      # commands here. Two copies of "how to test this project" drift, and the
+      # one in CI is the copy nobody runs locally until it breaks.
+      - name: Lint
+        run: make lint
+
+      - name: Type-check
+        run: make types
+
+      - name: Tests
+        run: make test
+
+      # The frontend has no test runner, but it does have to start. This is the
+      # cheapest possible check that index.html and its modules are all present
+      # and served - a missing file is a blank page, not an error.
+      - name: Frontend serves
+        run: |
+          python3 -m http.server 8000 --directory frontend &
+          for _ in $(seq 1 20); do
+            curl -sf http://localhost:8000/ > /dev/null && break
+            sleep 0.5
+          done
+          curl -sf http://localhost:8000/ > /dev/null
+          curl -sf http://localhost:8000/src/main.js > /dev/null
+          curl -sf http://localhost:8000/styles/tokens.css > /dev/null
+          echo "frontend serves"
+
+      # The contract test compares openapi.yaml against the running app, so a
+      # documented-but-missing endpoint already fails above. This checks the
+      # file itself still parses, which that test assumes.
+      - name: Contract parses
+        run: uv run python -c "import yaml, pathlib; yaml.safe_load(pathlib.Path('../openapi.yaml').read_text(encoding='utf-8')); print('openapi.yaml parses')"
+        working-directory: backend

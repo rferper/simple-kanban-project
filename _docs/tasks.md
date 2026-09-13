@@ -12,9 +12,9 @@ mostly independent of each other.
 Read `_docs/process.md` before starting one, and `_docs/decisions.md` before
 re-litigating anything it has already settled.
 
-> **Status.** Tasks 1–21 are implemented — see `git log`. Tasks 1–18 describe how
+> **Status.** Tasks 1–22 are implemented — see `git log`. Tasks 1–18 describe how
 > this repository was built and are recorded because the backlog is also the map
-> of how the product got made. Anything still outstanding starts at 22.
+> of how the product got made. Anything still outstanding starts at 23.
 
 ---
 
@@ -234,10 +234,6 @@ Python backend and the JavaScript frontend, and fix what they find on the
 existing code. Add them to the task runners and to the pre-close checklist in
 `_docs/process.md`, which currently names a step nobody can run.
 
----
-
-# Open
-
 ## 22. Add continuous integration
 
 Goal: The suite runs on every push, not just when someone remembers.
@@ -246,6 +242,10 @@ Description: Add a CI workflow that installs dependencies, runs the test suite
 and reports the result on pull requests. It must run on Linux, which is the
 reason the Makefile exists and the reason `.gitattributes` pins its line
 endings. Make a failing suite block a merge.
+
+---
+
+# Open
 
 ## 23. Make the API root say what it is
 

@@ -344,3 +344,21 @@ safety. Ruff still covers everything.
 
 Cost accepted: the frontend has no real linter, and adopting the formatter
 reflowed twelve files in one commit.
+
+## 21. CI runs the Makefile, not a copy of it
+
+`.github/workflows/check.yml` runs `make lint`, `make types` and `make test` on
+Linux for every push and pull request.
+
+Why through the Makefile: two copies of "how to check this project" drift, and
+the copy in CI is the one nobody runs locally until it breaks. This way the
+commands a contributor runs and the commands that gate a merge are the same
+strings.
+
+This is what the `.gitattributes` LF pin (#12-adjacent) and the `python3`
+detection in the Makefile were for - CI is the Linux environment that would have
+found both the hard way.
+
+Cost accepted: CI depends on the Makefile staying correct, so `make.ps1` is now
+the copy that can drift instead. The two are short and the header of each says
+to change them together.
