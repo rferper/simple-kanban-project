@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NextLane</title>
+    <link rel="stylesheet" href="styles/tokens.css" />
+    <link rel="stylesheet" href="styles/layout.css" />
+    <link rel="stylesheet" href="styles/components.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛣️</text></svg>"
+    />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="topbar">
+        <a class="brand" href="#/">
+          <span class="brand-mark" aria-hidden="true">🛣️</span>
+          <span class="brand-name">NextLane</span>
+        </a>
+        <nav class="nav" id="nav" aria-label="Main"></nav>
+      </header>
+      <main class="view" id="view" tabindex="-1"></main>
+    </div>
+
+    <div class="drawer-scrim" id="scrim" hidden></div>
+    <aside
+      class="drawer"
+      id="drawer"
+      aria-label="Card details"
+      aria-modal="true"
+      role="dialog"
+      hidden
+    ></aside>
+
+    <div class="modal-scrim" id="modal-scrim" hidden></div>
+    <div class="modal" id="modal" role="dialog" aria-modal="true" hidden></div>
+
+    <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

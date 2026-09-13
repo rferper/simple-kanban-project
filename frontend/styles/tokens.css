@@ -1,0 +1,94 @@
+/* NextLane design tokens — see _docs/specs.md §16.
+   Cosy productivity: warm off-white ground, soft area tints, restrained accents. */
+
+:root {
+  color-scheme: light;
+
+  /* Ground and surfaces */
+  --bg: #faf7f3;
+  --bg-tint: #f4efe9;
+  --surface: #fffdfb;
+  --surface-2: #f7f3ee;
+  --line: #e9e1d8;
+  --line-strong: #ddd2c5;
+
+  /* Ink */
+  --ink: #34302c;
+  --ink-2: #6b625a;
+  --ink-3: #968c82;
+
+  /* Areas (§16.3) */
+  --job-current: #7c6bc4;
+  --job-current-soft: #efeafc;
+  --job-current-line: #ddd3f6;
+
+  --job-search: #d97a55;
+  --job-search-soft: #fdeee6;
+  --job-search-line: #f8dccd;
+
+  --learning: #4c9a75;
+  --learning-soft: #e6f4ec;
+  --learning-line: #cde8da;
+
+  /* Priority (§10.2) — emphasis, not alarm */
+  --prio-low: #a49a90;
+  --prio-medium: #7d8f9c;
+  --prio-high: #c98a3c;
+  --prio-urgent: #c25f52;
+
+  /* Feedback */
+  --ok: #4c9a75;
+  --warn: #c98a3c;
+  --danger: #c25f52;
+  --danger-soft: #fbeae7;
+
+  /* Shape */
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 18px;
+  --r-xl: 26px;
+
+  --shadow-sm: 0 1px 2px rgba(75, 60, 45, 0.06);
+  --shadow-md: 0 4px 14px rgba(75, 60, 45, 0.08);
+  --shadow-lg: 0 18px 44px rgba(75, 60, 45, 0.16);
+
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --sp-7: 48px;
+
+  --font: "Nunito", "Quicksand", ui-rounded, "Segoe UI", system-ui, -apple-system,
+    sans-serif;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --fast: 130ms;
+  --med: 220ms;
+}
+
+[data-area="CURRENT_JOB"] {
+  --area: var(--job-current);
+  --area-soft: var(--job-current-soft);
+  --area-line: var(--job-current-line);
+}
+[data-area="JOB_SEARCH"] {
+  --area: var(--job-search);
+  --area-soft: var(--job-search-soft);
+  --area-line: var(--job-search-line);
+}
+[data-area="LEARNING"] {
+  --area: var(--learning);
+  --area-soft: var(--learning-soft);
+  --area-line: var(--learning-line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}

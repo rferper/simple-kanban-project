@@ -1,0 +1,297 @@
+/* App shell, navigation, dashboard and board layout. §5, §18, §36 */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  margin: 0;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+a {
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--job-current);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- Shell ---------- */
+
+.app {
+  min-height: 100vh;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  padding: var(--sp-3) var(--sp-5);
+  background: rgba(250, 247, 243, 0.88);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  text-decoration: none;
+  font-weight: 800;
+  font-size: 17px;
+  letter-spacing: -0.02em;
+  flex: none;
+}
+
+.brand-mark {
+  font-size: 20px;
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nav::-webkit-scrollbar {
+  display: none;
+}
+
+.nav a {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--ink-2);
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  transition: background var(--fast) var(--ease), color var(--fast) var(--ease);
+}
+
+.nav a:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.nav a[aria-current="page"] {
+  background: var(--area-soft, var(--surface));
+  color: var(--area, var(--ink));
+  box-shadow: var(--shadow-sm);
+}
+
+.view {
+  padding: var(--sp-6) var(--sp-5) var(--sp-7);
+  max-width: 1360px;
+  margin: 0 auto;
+}
+
+.view:focus {
+  outline: none;
+}
+
+/* ---------- Page headers ---------- */
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-5);
+}
+
+.page-title {
+  font-size: 26px;
+}
+
+.page-sub {
+  color: var(--ink-2);
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+.page-actions {
+  display: flex;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+/* ---------- Dashboard ---------- */
+
+.greeting {
+  font-size: 22px;
+  margin-bottom: var(--sp-4);
+}
+
+.dash-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+  align-items: start;
+}
+
+.dash-columns {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-4);
+}
+
+.dash-col {
+  background: var(--area-soft);
+  border: 1px solid var(--area-line);
+  border-radius: var(--r-lg);
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.dash-col-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+
+.dash-col-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--area);
+}
+
+.dash-col-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-height: 40px;
+}
+
+/* ---------- Board ---------- */
+
+.board {
+  display: grid;
+  grid-auto-flow: column;
+  /* Five columns have to fit a 1366px laptop without scrolling (§36). */
+  grid-auto-columns: minmax(236px, 1fr);
+  gap: var(--sp-3);
+  align-items: start;
+  overflow-x: auto;
+  padding-bottom: var(--sp-4);
+}
+
+.column {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-height: 180px;
+  transition: background var(--fast) var(--ease), border-color var(--fast) var(--ease);
+}
+
+.column.is-drop-target {
+  background: var(--area-soft);
+  border-color: var(--area);
+  border-style: dashed;
+}
+
+.column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 0 var(--sp-1);
+}
+
+.column-name {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-2);
+}
+
+.column-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-height: 8px;
+}
+
+/* ---------- Responsive (§36) ---------- */
+
+@media (max-width: 1020px) {
+  .dash-top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .view {
+    padding: var(--sp-5) var(--sp-4) var(--sp-7);
+  }
+  .dash-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .topbar {
+    padding: var(--sp-3) var(--sp-4);
+    gap: var(--sp-3);
+  }
+  .brand-name {
+    display: none;
+  }
+  .page-title {
+    font-size: 22px;
+  }
+}
+
+@media (max-width: 560px) {
+  .board {
+    grid-auto-columns: minmax(82vw, 1fr);
+  }
+}
