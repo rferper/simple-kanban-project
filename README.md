@@ -74,6 +74,18 @@ and gitignored — delete it and the next start reseeds. It is reached only thro
 the `Store` protocol, and the whole API test suite runs against both that and the
 in-memory implementation, so neither can quietly drift from the other.
 
+**Postgres is supported for deployments.** One setting switches it, and its
+shape is what chooses the implementation:
+
+```sh
+NEXTLANE_DB=postgresql://user:password@host/nextlane
+```
+
+SQLite stays the default, so a fresh clone still needs no server and no
+connection string. The store contract in `backend/tests/test_store.py` runs
+against all three implementations — see
+[`_docs/decisions.md`](_docs/decisions.md) #24.
+
 ## Where everything is
 
 | Path | What it is |

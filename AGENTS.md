@@ -29,6 +29,8 @@ backend/.venv` clears it.
 | install dependencies | `make install` | `cd backend && uv sync` |
 | the whole test suite | `make test` | `cd backend && uv run pytest` |
 | one test module | `make test-one T=test_auth` | `uv run pytest -k test_auth` |
+| a throwaway Postgres | `make postgres` | `postgres:16-alpine` on 55432; `make postgres-stop` removes it |
+| the suite against Postgres too | `make test-postgres` | the same suite with `NEXTLANE_TEST_POSTGRES` set |
 | list every target | `make` | — |
 | lint | `make lint` | Ruff over the backend, `frontend/check.mjs` over the frontend |
 | type-check | `make types` | `uv run ty check` (the `app` package) |
@@ -54,6 +56,11 @@ and `API_BASE` in `frontend/src/api/client.js`.
 The frontend has no toolchain and no test runner of its own
 (`_docs/decisions.md` #3).
 
+`NEXTLANE_DB` chooses the database and its shape chooses the implementation: a
+path is SQLite (the default), `:memory:` is the dict, a `postgresql://` DSN is
+Postgres (`_docs/decisions.md` #24). The Postgres tests skip unless
+`NEXTLANE_TEST_POSTGRES` points at a throwaway server; CI always sets it.
+
 ## Layout
 
 | Path | What it is |
@@ -67,9 +74,11 @@ The frontend has no toolchain and no test runner of its own
 | `openapi.yaml` | the API contract, derived from the frontend client (#7) |
 | `Dockerfile` | the whole app as one image — Node checks the frontend, Python serves it |
 | `frontend/` | the whole UI, talking to the API — start at its README |
-| `backend/` | the FastAPI API, on a mock database — start at its README |
+| `backend/` | the FastAPI API, on SQLite or Postgres — start at its README |
 | `backend/app/store.py` | **the storage seam** — the `Store` protocol |
 | `backend/app/sqlite_store.py` | the SQLite implementation of it |
+| `backend/app/postgres_store.py` | the Postgres implementation, for deployments |
+| `backend/app/dependencies.py` | which implementation `NEXTLANE_DB` selects |
 | `backend/app/auth.py` | password hashing, bearer tokens, `current_user` |
 | `backend/app/frontend.py` | serving the frontend from the API, when `NEXTLANE_FRONTEND` says where |
 | `backend/tests/` | written before the endpoints; the contract test guards drift |
@@ -89,7 +98,9 @@ The frontend has no toolchain and no test runner of its own
   checks both directions — change the contract and the code in the same commit.
 - Backend storage goes through the `Store` protocol. Routers and
   `app/service.py` must not know how anything is stored. Every implementation
-  must pass `tests/test_store.py`, which runs one contract against all of them.
+  must pass `tests/test_store.py`, which runs one contract against all of them
+  — the dict, SQLite and Postgres. A fourth one is a new module and a new
+  parameter on that test's `store` fixture, and nothing else.
 - The API is closed by default: every endpoint requires a bearer token except
   `POST /api/auth/login`. Adding a public endpoint means changing `PUBLIC` in
   `backend/tests/test_contract.py`, which is deliberately a visible edit.

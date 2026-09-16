@@ -12,8 +12,11 @@
 # Optional at run time:
 #   -e ANTHROPIC_API_KEY=...   turns on the job-advert reader (§15). The app is
 #                              fully usable without it (AGENTS.md).
-#   -e NEXTLANE_DB=...         where the SQLite file lives. Defaults to /data,
-#                              which is a volume, because the container is not.
+#   -e NEXTLANE_DB=...         where the data lives. Defaults to the SQLite file
+#                              on /data, which is a volume because the container
+#                              is not. A DSN — postgresql://user:pw@host/db —
+#                              runs it against Postgres instead, and then the
+#                              volume is not needed at all.
 
 
 # --------------------------------------------------------------- the frontend

@@ -2,11 +2,19 @@
 
 Issue #19 swaps the in-memory store for a real database. The point of the `Store`
 protocol is that nothing above it can tell the difference, so these tests are
-written once and parametrised over both implementations. A behaviour that holds
-for the dict must hold for SQLite, or the seam is a fiction.
+written once and parametrised over every implementation. A behaviour that holds
+for the dict must hold for SQLite and for Postgres, or the seam is a fiction.
 
 Anything specific to durability — surviving a restart — is at the bottom, since
 the in-memory store cannot and is not meant to.
+
+**Postgres needs a server, so those runs skip unless you point them at one:**
+
+    NEXTLANE_TEST_POSTGRES=postgresql://postgres:nextlane@localhost/nextlane_test
+
+Point it at a throwaway database. Every test empties the NextLane tables before
+it runs. CI sets it, against a `postgres:16-alpine` service container, so the
+contract is checked against all three implementations on every push.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -17,14 +25,17 @@ from app.auth import build_demo_user
 from app.models import Card, JobDetails, Preferences, Subtask
 from app.sqlite_store import SqliteStore
 from app.store import InMemoryStore
+from tests.conftest import POSTGRES_DSN
 
 
-@pytest.fixture(params=["memory", "sqlite"])
+@pytest.fixture(params=["memory", "sqlite", "postgres"])
 def store(request, tmp_path):
-    """Every test in this module runs twice, once per implementation."""
+    """Every test in this module runs once per implementation."""
     if request.param == "memory":
         return InMemoryStore()
-    return SqliteStore(tmp_path / "nextlane.sqlite3")
+    if request.param == "sqlite":
+        return SqliteStore(tmp_path / "nextlane.sqlite3")
+    return request.getfixturevalue("empty_postgres")
 
 
 def now():
@@ -481,3 +492,63 @@ class TestDurability:
         store = SqliteStore(tmp_path / "brand-new.sqlite3")
         assert store.list_cards() == []
         assert store.get_preferences().display_name == ""
+
+
+class TestPostgresDurability:
+    """The same promise as SQLite's, against a server rather than a file.
+
+    A new `PostgresStore` here stands in for a restarted container: a different
+    process, a different pool, the same database.
+    """
+
+    def reconnect(self, request):
+        from app.postgres_store import PostgresStore
+
+        store = PostgresStore(POSTGRES_DSN)
+        request.addfinalizer(store.close)
+        return store
+
+    def test_cards_survive_reconnecting(self, request, empty_postgres):
+        empty_postgres.save_card(a_card(title="Written before the restart", tags=["one"]))
+
+        card = self.reconnect(request).get_card("card-1")
+        assert card.title == "Written before the restart"
+        assert card.tags == ["one"]
+
+    def test_a_whole_seeded_board_survives(self, request, empty_postgres):
+        empty_postgres.seed()
+
+        second = self.reconnect(request)
+        assert len(second.list_cards()) == 12
+        assert second.get_card("seed-job-anthropic").job.company == "Anthropic"
+        assert second.get_card("seed-system-design").related_job_card_ids
+
+    def test_a_session_survives_a_restart(self, request, empty_postgres):
+        """Otherwise every deploy signs everybody out."""
+        user = build_demo_user()
+        empty_postgres.save_user(user)
+        empty_postgres.save_token("tok-1", user.id, now() + timedelta(days=7))
+
+        second = self.reconnect(request)
+        assert second.get_token("tok-1").user_id == user.id
+        assert second.get_user(user.id).password_hash == user.password_hash
+
+    def test_a_fresh_database_is_empty_not_broken(self, empty_postgres):
+        assert empty_postgres.list_cards() == []
+        assert empty_postgres.get_preferences().display_name == ""
+
+    def test_seeding_twice_from_two_connections_does_not_duplicate(self, request, empty_postgres):
+        """Two containers starting at once against one empty database (§the
+        advisory lock in postgres_store.seed)."""
+        empty_postgres.seed()
+        self.reconnect(request).seed()
+
+        assert len(empty_postgres.list_cards()) == 12
+
+    def test_timestamps_come_back_as_they_went_in(self, request, empty_postgres):
+        """TIMESTAMPTZ, and every connection pinned to UTC, so this cannot drift
+        with the server's own timezone."""
+        stamp = datetime(2026, 3, 1, 9, 30, tzinfo=UTC)
+        empty_postgres.save_card(a_card(created_at=stamp, updated_at=stamp))
+
+        assert self.reconnect(request).get_card("card-1").created_at == stamp

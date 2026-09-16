@@ -27,8 +27,9 @@ industry.
 The contract is `openapi.yaml` at the store root, derived from
 `frontend/src/api/client.js`. A test keeps the two from drifting apart.
 
-**The database is a mock.** Everything lives in memory for the life of the
-process, behind the `Store` protocol in `app/store.py`.
+Storage is behind the `Store` protocol in `app/store.py`: SQLite by default,
+Postgres when `NEXTLANE_DB` is a `postgresql://` DSN, and a dict in the tests.
+Nothing above that protocol knows which one it has.
 """
 
 app = FastAPI(

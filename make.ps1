@@ -24,7 +24,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'lint', 'types', 'check', 'open', 'clean', 'docker-build', 'docker-run')]
+    [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'lint', 'types', 'check', 'open', 'clean', 'docker-build', 'docker-run', 'postgres', 'postgres-stop', 'test-postgres')]
     [string]$Target = 'help',
 
     [int]$ApiPort = 8001,
@@ -33,6 +33,12 @@ param(
     # The container is one process serving both, so it has one port of its own.
     [int]$AppPort = 8000,
     [string]$Image = 'nextlane',
+
+    # A throwaway Postgres for the third implementation of the store contract.
+    # Not 5432, so it cannot collide with a Postgres somebody already runs.
+    [int]$DbPort = 55432,
+    [string]$DbContainer = 'nextlane-db',
+    [string]$DbImage = 'postgres:16-alpine',
 
     # For test-one:  .\make.ps1 test-one -T test_auth
     [string]$T = ''
@@ -43,6 +49,7 @@ $ErrorActionPreference = 'Stop'
 $Root     = $PSScriptRoot
 $Backend  = Join-Path $Root 'backend'
 $Frontend = Join-Path $Root 'frontend'
+$TestDsn  = "postgresql://postgres:nextlane@localhost:${DbPort}/nextlane_test"
 
 <#
   Run an external program.
@@ -103,6 +110,8 @@ function Show-Help {
     Write-Host '  .\make.ps1 api        run just the API'
     Write-Host '  .\make.ps1 web        run just the frontend'
     Write-Host '  .\make.ps1 test       run the test suite'
+    Write-Host '  .\make.ps1 postgres   start a throwaway Postgres for the Postgres tests'
+    Write-Host '  .\make.ps1 test-postgres  run the suite against it as well'
     Write-Host '  .\make.ps1 lint       lint the backend and check the frontend'
     Write-Host '  .\make.ps1 types      type-check the backend'
     Write-Host '  .\make.ps1 check      lint + types + tests'
@@ -181,6 +190,61 @@ function Invoke-TestOne {
     Invoke-Native -File 'uv' -WorkingDirectory $Backend -Arguments @(
         'run', 'pytest', '-k', $T
     )
+}
+
+# Asking first rather than trying and ignoring the failure: `docker start` on a
+# container that does not exist writes an error to the console, and a task that
+# succeeds should not look like it broke.
+function Test-DbContainer {
+    $found = & docker ps --all --quiet --filter "name=^$DbContainer$"
+    return [bool]$found
+}
+
+function Invoke-Postgres {
+    Assert-Docker
+
+    # Safe to run twice, which is the only way a task like this gets used.
+    if (Test-DbContainer) {
+        Invoke-Native -File 'docker' -Arguments @('start', $DbContainer) | Out-Null
+    }
+    else {
+        Invoke-Native -File 'docker' -Arguments @(
+            'run', '-d', '--name', $DbContainer,
+            '-e', 'POSTGRES_PASSWORD=nextlane',
+            '-e', 'POSTGRES_DB=nextlane_test',
+            '-p', "${DbPort}:5432",
+            $DbImage
+        ) | Out-Null
+    }
+
+    foreach ($attempt in 1..30) {
+        Invoke-Native -File 'docker' -IgnoreExitCode -Arguments @(
+            'exec', $DbContainer, 'pg_isready', '-q'
+        ) | Out-Null
+        if ($LASTEXITCODE -eq 0) { break }
+        Start-Sleep -Seconds 1
+    }
+
+    Write-Host "Postgres is up:  $TestDsn"
+}
+
+function Invoke-PostgresStop {
+    Assert-Docker
+    if (Test-DbContainer) {
+        Invoke-Native -File 'docker' -Arguments @('rm', '-f', $DbContainer) | Out-Null
+    }
+    Write-Host 'stopped'
+}
+
+function Invoke-TestPostgres {
+    Assert-Uv
+    $env:NEXTLANE_TEST_POSTGRES = $TestDsn
+    try {
+        Invoke-Native -File 'uv' -Arguments @('run', 'pytest') -WorkingDirectory $Backend
+    }
+    finally {
+        Remove-Item Env:NEXTLANE_TEST_POSTGRES -ErrorAction SilentlyContinue
+    }
 }
 
 function Invoke-Lint {
@@ -271,4 +335,7 @@ switch ($Target) {
     'clean'    { Invoke-Clean }
     'docker-build' { Invoke-DockerBuild }
     'docker-run'   { Invoke-DockerRun }
+    'postgres'      { Invoke-Postgres }
+    'postgres-stop' { Invoke-PostgresStop }
+    'test-postgres' { Invoke-TestPostgres }
 }

@@ -427,3 +427,56 @@ Cost accepted: two ways to run the app instead of one, and
 `backend/tests/test_frontend.py` is what keeps the second honest — that the mount catches the
 assets without swallowing the API, that the API stays closed behind it, and that
 the real `frontend/index.html` still takes the injection.
+
+## 24. Postgres is a third implementation, not a migration
+
+`NEXTLANE_DB` already said where the database was. It now also says which
+database, because the shape of the setting is enough to tell:
+
+    /some/path/nextlane.sqlite3          SQLite — the default, and a fresh clone
+    :memory:                             the dict, for a throwaway run
+    postgresql://user:pw@host/nextlane   Postgres
+
+One setting rather than two. Two would let them disagree, and something would
+then have to decide which of them won.
+
+**SQLite stays the default and stays supported.** `make install && make run` on
+a fresh clone must still give someone a working board without a server, a
+container or a connection string, and `_docs/specs.md` §26 is explicit that this
+project is not to spend itself on infrastructure. Postgres is what you point it
+at when the data has to outlive the container.
+
+`app/postgres_store.py` is `app/sqlite_store.py`'s schema in Postgres types —
+`TIMESTAMPTZ`, `DATE`, `BOOLEAN`, `DOUBLE PRECISION` — behind the same `Store`
+protocol, with hand-written SQL and no ORM for the same reason as #15. The three
+differences that are not cosmetic:
+
+* **A connection pool** rather than one connection behind a lock, because
+  FastAPI runs sync endpoints on a threadpool and that is what psycopg's pool is
+  for. The transaction boundary is the `_cursor()` block.
+* **Every connection is pinned to UTC**, so a stored `createdAt` cannot mean
+  something different depending on the server's timezone setting.
+* **Seeding takes a transaction-scoped advisory lock.** Two containers starting
+  at once against one empty database would otherwise both find it empty and both
+  fill it — which SQLite, being one file and one process, never had to consider.
+
+`psycopg[binary,pool]` is the one new dependency, and it was asked for before it
+was added, as `AGENTS.md` requires. `binary` because it ships libpq and a
+Windows contributor should not need a compiler; the alternatives were asyncpg,
+which would have made the whole `Store` protocol async for throughput this app
+will never notice, and SQLAlchemy, which #15 already turned down.
+
+**The contract test is what makes the claim honest.** `tests/test_store.py` runs
+one set of tests against all three implementations, so the Postgres runs need a
+server: they skip unless `NEXTLANE_TEST_POSTGRES` points at a throwaway
+database, and CI sets it against a `postgres:16-alpine` service container so
+they run on every push. Locally, `make postgres` starts one and
+`make test-postgres` uses it.
+
+Cost accepted: a dependency a SQLite user does not need — imported lazily, so it
+is never loaded unless a DSN asks for it — and a third implementation to keep in
+step whenever the schema changes. The endpoint suite is still parametrised over
+the dict and SQLite only, because tripling a hundred endpoint tests buys little
+once the store contract holds; a handful of tests in `tests/test_dependencies.py`
+cover the part that contract cannot, which is that a real request reaches a real
+server.

@@ -8,7 +8,17 @@ module state — the same seam a real database will arrive on.
 directly rather than posting a password, because scrypt is deliberately slow and
 these hundred-odd tests are not testing the password path — `test_auth.py` is,
 through the real endpoint.
+
+**Postgres needs a server**, so the fixtures at the bottom skip unless one is
+configured:
+
+    NEXTLANE_TEST_POSTGRES=postgresql://postgres:nextlane@localhost/nextlane_test
+
+Point it at a throwaway database — every test empties the NextLane tables before
+it runs. CI sets it against a `postgres:16-alpine` service container.
 """
+
+import os
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,6 +31,29 @@ from app.sqlite_store import SqliteStore
 from app.store import InMemoryStore, Store
 
 DEMO_PASSWORD = "nextlane"
+
+POSTGRES_DSN = os.environ.get("NEXTLANE_TEST_POSTGRES", "").strip()
+
+NO_POSTGRES = (
+    "NEXTLANE_TEST_POSTGRES is not set. Point it at a throwaway database to run "
+    "the contract against Postgres too — see backend/README.md."
+)
+
+#: Emptied between tests. Listed rather than discovered from the catalogue, so
+#: this can only ever truncate NextLane's own tables — a suite pointed at the
+#: wrong database should fail, not wipe it.
+POSTGRES_TABLES = (
+    "card_tags",
+    "subtasks",
+    "job_requirements",
+    "learning_job_links",
+    "job_learning_links",
+    "job_details",
+    "cards",
+    "preferences",
+    "users",
+    "tokens",
+)
 
 
 @pytest.fixture(scope="session")
@@ -81,6 +114,29 @@ def seeded_client(seeded_store: Store) -> TestClient:
         test_client.headers["Authorization"] = f"Bearer {token}"
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(scope="session")
+def postgres():
+    """One `PostgresStore` for the session — opening a pool per test is waste."""
+    if not POSTGRES_DSN:
+        pytest.skip(NO_POSTGRES)
+
+    from app.postgres_store import PostgresStore
+
+    store = PostgresStore(POSTGRES_DSN)  # also creates the schema
+    yield store
+    store.close()
+
+
+@pytest.fixture
+def empty_postgres(postgres):
+    """That store, emptied. The schema exists by the time this runs."""
+    import psycopg
+
+    with psycopg.connect(POSTGRES_DSN) as connection, connection.cursor() as cursor:
+        cursor.execute(f"TRUNCATE {', '.join(POSTGRES_TABLES)} CASCADE")
+    return postgres
 
 
 def make_card(client: TestClient, **overrides) -> dict:

@@ -1,7 +1,7 @@
 # NextLane — backend
 
-FastAPI, serving the contract in [`../openapi.yaml`](../openapi.yaml), against a
-mock database.
+FastAPI, serving the contract in [`../openapi.yaml`](../openapi.yaml), against
+SQLite by default and Postgres when you point it at one.
 
 ## Running it
 
@@ -72,25 +72,58 @@ them from the database.
 
 The file lives at `backend/nextlane.sqlite3` and is seeded with the §31 fixtures
 the first time it is created. It is gitignored and disposable: delete it and the
-next start reseeds. Point it somewhere else, or keep it in RAM, with
+next start reseeds.
+
+**`NEXTLANE_DB` chooses the database, and its shape chooses the
+implementation:**
 
 ```sh
-NEXTLANE_DB=/some/path/nextlane.sqlite3
-NEXTLANE_DB=:memory:
+NEXTLANE_DB=/some/path/nextlane.sqlite3          # a path  → SQLite (the default)
+NEXTLANE_DB=:memory:                             # the dict, for a throwaway run
+NEXTLANE_DB=postgresql://user:pw@host/nextlane   # a DSN   → Postgres
 ```
 
-`InMemoryStore` is still there, still a dict, and is what `:memory:` selects.
+One setting rather than two, because "where the data is" is one decision;
+`app/dependencies.py` is the only place that reads it.
 
-**The two implementations are interchangeable, and a test keeps them that way.**
-`tests/test_store.py` runs one contract against both, and `tests/conftest.py`
-parametrises the whole API suite over both — so every endpoint test runs twice.
+### Postgres
+
+`app/postgres_store.py`, for when the data has to outlive the container.
+It is the same schema in Postgres types — `TIMESTAMPTZ`, `DATE`, `BOOLEAN`,
+`DOUBLE PRECISION` — behind the same protocol, still hand-written SQL and still
+no ORM. A connection pool rather than one locked connection, every connection
+pinned to UTC, and seeding behind an advisory lock so two containers starting at
+once against one empty database cannot both fill it (`_docs/decisions.md` #24).
+
+`psycopg[binary,pool]` is the only dependency it adds, and it is imported lazily
+— a SQLite installation never loads it.
+
+**SQLite is still the default and still supported.** A fresh clone gets a
+working board with no server, no container and no connection string.
+
+To run the suite against Postgres as well, from the repository root:
+
+```sh
+make postgres        # a throwaway postgres:16-alpine on 55432
+make test-postgres   # the whole suite, with NEXTLANE_TEST_POSTGRES set
+make postgres-stop   # when you are done with it
+```
+
+Without that variable the Postgres runs skip and everything else is unaffected.
+CI always sets it, against a service container, so the store contract really is
+checked against all three implementations on every push.
+
+**The implementations are interchangeable, and a test keeps them that way.**
+`tests/test_store.py` runs one contract against all three, and `tests/conftest.py`
+parametrises the whole API suite over the dict and SQLite — so every endpoint
+test runs twice.
 That is what turns "nothing above the seam can tell the difference" from a claim
 into something checked. It has already earned its keep: running the API against
 SQLite found a place where the dict silently allowed two accounts to share an
 email address and SQLite did not.
 
-Two disciplines the mock imposes on purpose, because a real database imposes
-them too:
+Two disciplines `InMemoryStore` imposes on purpose, because a real database
+imposes them too:
 
 - **stored objects are copied on the way in and on the way out**, so holding a
   `Card` cannot let you mutate what is stored;
@@ -104,7 +137,9 @@ backend/
 ├── app/
 │   ├── main.py          FastAPI app, CORS, error handlers
 │   ├── models.py        wire models — snake_case in Python, camelCase on the wire
-│   ├── store.py         ← the storage seam (the mock database)
+│   ├── store.py         ← the storage seam, and the in-memory implementation
+│   ├── sqlite_store.py  SQLite behind it — the default
+│   ├── postgres_store.py  Postgres behind it — for deployments
 │   ├── auth.py          password hashing, tokens, the current_user dependency
 │   ├── routers/         one module per group of endpoints
 │   ├── domain.py        the vocabulary: areas, statuses, priorities (§28)
@@ -209,7 +244,6 @@ is a deliberate change rather than a surprise.
 
 ## Not done yet
 
-- **No persistence.** See the mock database above.
 - **No account management.** There is one seeded account and no way to register,
   change a password or reset one. §26 warns against spending half the project on
   account management, and nothing in the product needs more than this yet.

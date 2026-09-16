@@ -10,6 +10,11 @@ dependencies = [
     # Job-advert extraction (issue #20). The API runs without it configured -
     # see app/ai.py - but the official SDK is how the model call is made.
     "anthropic>=0.40",
+    # Postgres, behind the same Store protocol as SQLite - see
+    # app/postgres_store.py. `binary` ships libpq so there is nothing to build
+    # on Windows; `pool` is what a threadpool of sync endpoints wants.
+    # SQLite is still the default and still needs none of this.
+    "psycopg[binary,pool]>=3.2",
 ]
 
 [dependency-groups]

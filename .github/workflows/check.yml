@@ -17,6 +17,29 @@ jobs:
     name: lint, types and tests
     runs-on: ubuntu-latest
 
+    # The store contract runs against every implementation of it, and one of
+    # them needs a server. Without this the Postgres half of tests/test_store.py
+    # skips, and "all three are interchangeable" would be a claim nobody checks.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: nextlane
+          POSTGRES_DB: nextlane_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      # A throwaway database in a throwaway container. The suite empties the
+      # NextLane tables before every test.
+      NEXTLANE_TEST_POSTGRES: postgresql://postgres:nextlane@localhost:5432/nextlane_test
+
     steps:
       - uses: actions/checkout@v4
 
