@@ -46,7 +46,8 @@ PY ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null)
 
 .DEFAULT_GOAL := help
 .PHONY: help install run api web test test-one lint types check clean open require-python
-.PHONY: docker-build docker-run test-postgres postgres postgres-stop
+.PHONY: docker-build docker-run compose-up compose-down
+.PHONY: test-postgres postgres postgres-stop
 
 require-python:
 	@if [ -z "$(PY)" ]; then \
@@ -72,6 +73,8 @@ help: ## List the targets
 	@echo ''
 	@echo '  make docker-build   build the container image'
 	@echo '  make docker-run     run it — the whole app on one port'
+	@echo '  make compose-up     run it with Postgres, through docker compose'
+	@echo '  make compose-down   stop those (docker compose down -v drops the data)'
 	@echo ''
 	@echo '  frontend  http://localhost:$(WEB_PORT)'
 	@echo '  API       http://localhost:$(API_PORT)   docs at /docs'
@@ -147,6 +150,16 @@ docker-run: ## Run that image — the whole app on http://localhost:$(APP_PORT)
 	@echo 'sign in   researcher@example.com / nextlane'
 	@echo ''
 	docker run --rm -it -p $(APP_PORT):8000 -v nextlane-data:/data -e ANTHROPIC_API_KEY $(IMAGE)
+
+compose-up: ## Run the app and Postgres together (docker-compose.yaml)
+	docker compose up --build -d
+	@echo ''
+	@echo 'NextLane  http://localhost:$(APP_PORT)  (docs at /docs)'
+	@echo 'sign in   researcher@example.com / nextlane'
+	@echo 'logs      docker compose logs -f'
+
+compose-down: ## Stop them, keeping the data (docker compose down -v drops it)
+	docker compose down
 
 clean: ## Remove caches
 	@find . -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true

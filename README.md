@@ -50,6 +50,18 @@ on the volume, and works with the AI feature switched off. Pass
 [`_docs/decisions.md`](_docs/decisions.md) #23 for why the API serves the
 frontend there and two servers stay the way development runs.
 
+**With Postgres**, which is the shape of a real deployment —
+[`docker-compose.yaml`](docker-compose.yaml) runs the app and its database
+together:
+
+```sh
+make compose-up       # http://localhost:8000
+make compose-down     # stop; `docker compose down -v` also drops the data
+```
+
+The app waits for the database to be healthy before it starts, and the board
+survives `down` and `up` because the data is on a volume.
+
 Either runner wraps these two commands, if you would rather run them yourself:
 
 ```sh
@@ -94,6 +106,7 @@ against all three implementations — see
 | [`backend/`](backend) | the FastAPI API, on SQLite |
 | [`openapi.yaml`](openapi.yaml) | the API contract both sides answer to |
 | [`Dockerfile`](Dockerfile) | the whole app as one image |
+| [`docker-compose.yaml`](docker-compose.yaml) | that image, plus Postgres |
 | [`_docs/specs.md`](_docs/specs.md) | the product specification — the source of truth |
 | [`_docs/process.md`](_docs/process.md) | how work moves from issue to merged |
 | [`_docs/decisions.md`](_docs/decisions.md) | calls already settled, and why |

@@ -480,3 +480,35 @@ the dict and SQLite only, because tripling a hundred endpoint tests buys little
 once the store contract holds; a handful of tests in `tests/test_dependencies.py`
 cover the part that contract cannot, which is that a real request reaches a real
 server.
+
+## 25. The compose file is for running it, not for running it in production
+
+`docker-compose.yaml` is the two-service version of #23 and #24: the image the
+`Dockerfile` builds, plus the Postgres it points `NEXTLANE_DB` at. It exists
+because "the app and its database together" was three commands and a network to
+get right by hand, and the two of them are now one.
+
+Three calls in it worth naming:
+
+**The database port is not published.** The app reaches Postgres over the
+compose network, and nothing on the host needs it — which also means this cannot
+collide with a Postgres somebody already runs on 5432. `docker compose exec db
+psql -U nextlane nextlane` is how you look inside.
+
+**`app` waits for a health check, not for the port.** Postgres accepts
+connections briefly while it initialises and then restarts, so a container that
+connected in that window would fail for no visible reason. `pg_isready` in a
+`depends_on: condition: service_healthy` is what makes the start order real.
+
+**The default credentials are `nextlane`/`nextlane`, in the file.** They are
+overridable — `POSTGRES_PASSWORD` in the environment or a `.env` beside the
+compose file wins — and the database is not reachable from outside the compose
+network, so what they protect is one container from another. This is the same
+call as the seeded `researcher@example.com` account: a development convenience
+that makes a fresh clone work, and has no place anywhere real. A deployment sets
+them, and `.env` is already gitignored.
+
+Cost accepted: a fourth place that knows how to start this app, after the
+Makefile, `make.ps1` and the `Dockerfile`. It is the one that composes the other
+three rather than repeating them — it builds the `Dockerfile` and sets the same
+`NEXTLANE_DB` a human would.

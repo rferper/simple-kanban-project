@@ -37,6 +37,8 @@ backend/.venv` clears it.
 | everything before a commit | `make check` | lint + types + tests |
 | build the container image | `make docker-build` | `docker build -t nextlane .` |
 | run the container | `make docker-run` | one process on 8000, the API serving the frontend |
+| run it with Postgres | `make compose-up` | `docker compose up --build -d` — app + database |
+| stop those | `make compose-down` | keeps the data; `docker compose down -v` drops it |
 
 CI runs `make lint`, `make types` and `make test` on Linux for every push and
 pull request (`.github/workflows/check.yml`) — through the Makefile, so there is
@@ -73,6 +75,7 @@ Postgres (`_docs/decisions.md` #24). The Postgres tests skip unless
 | `_docs/_team/` | the role briefs the subagents run on |
 | `openapi.yaml` | the API contract, derived from the frontend client (#7) |
 | `Dockerfile` | the whole app as one image — Node checks the frontend, Python serves it |
+| `docker-compose.yaml` | that image plus the Postgres it deploys against |
 | `frontend/` | the whole UI, talking to the API — start at its README |
 | `backend/` | the FastAPI API, on SQLite or Postgres — start at its README |
 | `backend/app/store.py` | **the storage seam** — the `Store` protocol |

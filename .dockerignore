@@ -29,4 +29,5 @@ Makefile
 make.ps1
 Dockerfile
 .dockerignore
+docker-compose.yaml
 *.md

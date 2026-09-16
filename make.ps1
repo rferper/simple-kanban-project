@@ -24,7 +24,8 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'lint', 'types', 'check', 'open', 'clean', 'docker-build', 'docker-run', 'postgres', 'postgres-stop', 'test-postgres')]
+    [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'lint', 'types', 'check', 'open', 'clean', 'docker-build', 'docker-run', 'compose-up', 'compose-down',
+        'postgres', 'postgres-stop', 'test-postgres')]
     [string]$Target = 'help',
 
     [int]$ApiPort = 8001,
@@ -121,6 +122,8 @@ function Show-Help {
     Write-Host ''
     Write-Host '  .\make.ps1 docker-build   build the container image'
     Write-Host '  .\make.ps1 docker-run     run it - the whole app on one port'
+    Write-Host '  .\make.ps1 compose-up     run it with Postgres, through docker compose'
+    Write-Host '  .\make.ps1 compose-down   stop those (docker compose down -v drops the data)'
     Write-Host ''
     Write-Host "  frontend  http://localhost:$WebPort"
     Write-Host "  API       http://localhost:$ApiPort   docs at /docs"
@@ -190,6 +193,24 @@ function Invoke-TestOne {
     Invoke-Native -File 'uv' -WorkingDirectory $Backend -Arguments @(
         'run', 'pytest', '-k', $T
     )
+}
+
+function Invoke-ComposeUp {
+    Assert-Docker
+    Invoke-Native -File 'docker' -WorkingDirectory $Root -Arguments @(
+        'compose', 'up', '--build', '-d'
+    )
+    Write-Host ''
+    Write-Host "NextLane  http://localhost:$AppPort  (docs at /docs)"
+    Write-Host '  sign in   researcher@example.com / nextlane'
+    Write-Host '  logs      docker compose logs -f'
+}
+
+function Invoke-ComposeDown {
+    Assert-Docker
+    # Keeps the volume. `docker compose down -v` is how you throw the data away,
+    # and it is deliberately not a target - that should be typed on purpose.
+    Invoke-Native -File 'docker' -WorkingDirectory $Root -Arguments @('compose', 'down')
 }
 
 # Asking first rather than trying and ignoring the failure: `docker start` on a
@@ -335,6 +356,8 @@ switch ($Target) {
     'clean'    { Invoke-Clean }
     'docker-build' { Invoke-DockerBuild }
     'docker-run'   { Invoke-DockerRun }
+    'compose-up'    { Invoke-ComposeUp }
+    'compose-down'  { Invoke-ComposeDown }
     'postgres'      { Invoke-Postgres }
     'postgres-stop' { Invoke-PostgresStop }
     'test-postgres' { Invoke-TestPostgres }

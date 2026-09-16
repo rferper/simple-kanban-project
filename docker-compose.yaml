@@ -1,0 +1,60 @@
+# NextLane, with the database it deploys against.
+#
+#   docker compose up --build        the whole thing on http://localhost:8000
+#   docker compose down              stop it, keep the data
+#   docker compose down -v           stop it and throw the data away
+#
+# Two services: `db` is Postgres, `app` is the image the Dockerfile builds —
+# one process serving the API and the frontend (`_docs/decisions.md` #23),
+# pointed at `db` by NEXTLANE_DB (#24).
+#
+# The database port is deliberately not published. The app reaches it over the
+# compose network, and nothing on the host needs it — which also means this
+# cannot collide with a Postgres you already run on 5432. To look inside:
+#
+#   docker compose exec db psql -U nextlane nextlane
+#
+# and if you really do want it on the host, add a `ports:` entry to `db`.
+
+name: nextlane
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nextlane}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nextlane}
+      POSTGRES_DB: ${POSTGRES_DB:-nextlane}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `app` waits for this rather than for the port to open: Postgres accepts
+      # connections briefly during startup and then restarts, and a container
+      # that connected in that window would fail for no visible reason.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nextlane} -d ${POSTGRES_DB:-nextlane}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # A DSN, so the backend opens Postgres rather than a SQLite file. `db` is
+      # the service name and the hostname; 5432 is the port inside the network,
+      # published or not.
+      NEXTLANE_DB: postgresql://${POSTGRES_USER:-nextlane}:${POSTGRES_PASSWORD:-nextlane}@db:5432/${POSTGRES_DB:-nextlane}
+      # Optional. Set it in the environment or a .env file beside this one and
+      # the job-advert reader turns itself on; without it the app is fully
+      # usable and says so (§15, AGENTS.md).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+volumes:
+  pgdata:
