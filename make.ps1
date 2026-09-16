@@ -24,11 +24,15 @@
 [CmdletBinding()]
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'lint', 'types', 'check', 'open', 'clean')]
+    [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'lint', 'types', 'check', 'open', 'clean', 'docker-build', 'docker-run')]
     [string]$Target = 'help',
 
     [int]$ApiPort = 8001,
     [int]$WebPort = 8000,
+
+    # The container is one process serving both, so it has one port of its own.
+    [int]$AppPort = 8000,
+    [string]$Image = 'nextlane',
 
     # For test-one:  .\make.ps1 test-one -T test_auth
     [string]$T = ''
@@ -105,6 +109,9 @@ function Show-Help {
     Write-Host '  .\make.ps1 test-one -T test_auth'
     Write-Host '  .\make.ps1 open       open the app in a browser'
     Write-Host '  .\make.ps1 clean      remove caches'
+    Write-Host ''
+    Write-Host '  .\make.ps1 docker-build   build the container image'
+    Write-Host '  .\make.ps1 docker-run     run it - the whole app on one port'
     Write-Host ''
     Write-Host "  frontend  http://localhost:$WebPort"
     Write-Host "  API       http://localhost:$ApiPort   docs at /docs"
@@ -209,6 +216,38 @@ function Invoke-Open {
     Start-Process "http://localhost:$WebPort"
 }
 
+function Assert-Docker {
+    if (-not (Get-Command 'docker' -ErrorAction SilentlyContinue)) {
+        throw 'docker is not on PATH. See https://docs.docker.com/get-started/'
+    }
+}
+
+function Invoke-DockerBuild {
+    Assert-Docker
+    Invoke-Native -File 'docker' -WorkingDirectory $Root -Arguments @(
+        'build', '-t', $Image, '.'
+    )
+}
+
+function Invoke-DockerRun {
+    Assert-Docker
+
+    Write-Host "NextLane  http://localhost:$AppPort  (docs at /docs)"
+    Write-Host '  sign in   researcher@example.com / nextlane'
+    Write-Host ''
+
+    # -e with no value passes the key through when it is set in this shell and
+    # leaves it unset when it is not, which is the arrangement the app wants:
+    # the advert reader is optional and the app is fully usable without it.
+    Invoke-Native -File 'docker' -IgnoreExitCode -Arguments @(
+        'run', '--rm', '-it',
+        '-p', "${AppPort}:8000",
+        '-v', 'nextlane-data:/data',
+        '-e', 'ANTHROPIC_API_KEY',
+        $Image
+    )
+}
+
 function Invoke-Clean {
     foreach ($name in '__pycache__', '.pytest_cache') {
         Get-ChildItem -Path $Root -Filter $name -Recurse -Directory -ErrorAction SilentlyContinue |
@@ -230,4 +269,6 @@ switch ($Target) {
     'check'    { Invoke-Check }
     'open'     { Invoke-Open }
     'clean'    { Invoke-Clean }
+    'docker-build' { Invoke-DockerBuild }
+    'docker-run'   { Invoke-DockerRun }
 }

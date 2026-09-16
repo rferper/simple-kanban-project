@@ -6,6 +6,10 @@ Run it:
 
 The frontend expects it on port 8001 (see `openapi.yaml`), leaving 8000 for the
 static frontend itself.
+
+It can also serve that frontend itself, which is what the container does — one
+process, one port, one origin. Set `NEXTLANE_FRONTEND` to the directory and see
+`app/frontend.py`; unset, nothing below changes.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app import errors
+from app import errors, frontend
 from app.routers import ai, auth, cards, links, preferences, root
 
 DESCRIPTION = """
@@ -35,7 +39,9 @@ app = FastAPI(
     docs_url="/docs",
 )
 
-# The frontend is served separately as static files, so it is always cross-origin.
+# When the frontend is served separately as static files it is cross-origin, and
+# these are the two addresses it is served from. When this process serves it
+# instead the requests are same-origin and never reach this middleware.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -49,9 +55,18 @@ app.add_middleware(
 
 errors.install(app)
 
-app.include_router(root.router)
 app.include_router(auth.router)
 app.include_router(cards.router)
 app.include_router(links.router)
 app.include_router(preferences.router)
 app.include_router(ai.router)
+
+# `/` belongs to whichever of the two is actually in front of the user: the app
+# when this process serves it, and otherwise the sign that points at it
+# (`_docs/decisions.md` #22, #23). The mount goes last, because it matches
+# every path the routers above did not.
+FRONTEND = frontend.directory()
+if FRONTEND is None:
+    app.include_router(root.router)
+else:
+    frontend.mount(app, FRONTEND)

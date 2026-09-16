@@ -23,6 +23,19 @@ uv run uvicorn app.main:app --reload --port 8001
 
 Port 8001 leaves 8000 for the static frontend, and CORS is already open to it.
 
+**It can also serve that frontend itself**, which is how the container runs it
+— one process, one port, one origin, no CORS:
+
+```sh
+NEXTLANE_FRONTEND=../frontend uv run uvicorn app.main:app --port 8000
+```
+
+Unset, nothing changes and the two-server arrangement above is what you get.
+Set, `/` is the app rather than the service info, `index.html` is served with
+`window.NEXTLANE_API_BASE` pointed at this origin, and everything under `/api`
+is exactly where it was. `app/frontend.py` is the whole of it;
+`_docs/decisions.md` #23 says why.
+
 Every endpoint needs a token except login, so start there:
 
 ```sh
@@ -97,6 +110,7 @@ backend/
 │   ├── domain.py        the vocabulary: areas, statuses, priorities (§28)
 │   ├── service.py       the rules: column validity, completedAt, link bookkeeping
 │   ├── dependencies.py  wiring; what tests override
+│   ├── frontend.py      serving the frontend, when NEXTLANE_FRONTEND says where
 │   ├── seed.py          the §31 fixtures
 │   └── ai.py            advert extraction — isolated, §27
 └── tests/               written first

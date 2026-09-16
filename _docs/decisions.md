@@ -384,3 +384,46 @@ and was what caught the endpoint being undocumented.
 
 Cost accepted: two public endpoints instead of one, and the description now
 duplicates a sentence that also lives in the README and the spec.
+
+## 23. The container is one process: the API serves the frontend
+
+`make run` starts two servers and always will — the frontend has no build step
+(#3), so a saved file is a reloaded page, and that is the right arrangement for
+editing.
+
+A deployment is the other case. The `Dockerfile` builds one image: a Node stage
+runs `frontend/check.mjs` over the frontend, and the Python stage takes those
+files and serves them from the API process. One port, one origin, no CORS.
+
+Why not nginx in front of uvicorn: it is a second image, a second config file
+and a second place the paths have to agree, in exchange for serving seventeen ES
+modules and three stylesheets. Starlette's `StaticFiles` does that well at this
+size, and the day it does not, the seam to change is one module.
+
+The seam is `backend/app/frontend.py`, and it is off unless told otherwise:
+
+    NEXTLANE_FRONTEND=/app/frontend   serve the app at `/`
+    (unset)                           the two-server default, unchanged
+
+Two consequences, both deliberate:
+
+**`/` goes to whichever is in front of the user.** When this process serves the
+app, `/` is the app and the `GET /` service info from #22 is not registered —
+`app/main.py` picks one or the other. That endpoint is a sign pointing at the
+door; when the door is right there the sign is noise. The API's own operations
+are untouched in either arrangement, so `openapi.yaml` still describes the API
+either way.
+
+**`index.html` is rewritten on the way out**, to inject
+`window.NEXTLANE_API_BASE = window.location.origin`. Without it the page would
+call the `http://localhost:8001` default baked into `frontend/src/api/client.js`
+and a container on any other host would load and then fail every request. The
+origin rather than a baked-in URL, so one image works on localhost, behind a
+reverse proxy, and under a different hostname without being rebuilt. The client
+already documented that global as its override; this is the documented door, not
+a new one.
+
+Cost accepted: two ways to run the app instead of one, and
+`backend/tests/test_frontend.py` is what keeps the second honest — that the mount catches the
+assets without swallowing the API, that the API stays closed behind it, and that
+the real `frontend/index.html` still takes the injection.

@@ -33,6 +33,8 @@ backend/.venv` clears it.
 | lint | `make lint` | Ruff over the backend, `frontend/check.mjs` over the frontend |
 | type-check | `make types` | `uv run ty check` (the `app` package) |
 | everything before a commit | `make check` | lint + types + tests |
+| build the container image | `make docker-build` | `docker build -t nextlane .` |
+| run the container | `make docker-run` | one process on 8000, the API serving the frontend |
 
 CI runs `make lint`, `make types` and `make test` on Linux for every push and
 pull request (`.github/workflows/check.yml`) — through the Makefile, so there is
@@ -40,6 +42,10 @@ only one copy of how to check this project.
 
 Frontend <http://localhost:8000>, API <http://localhost:8001>, docs at `/docs`.
 Sign in with `researcher@example.com` / `nextlane`.
+
+The container is the other arrangement: one process, one port, one origin,
+because the API serves the frontend there (`_docs/decisions.md` #23). Two
+servers stays the way development runs.
 
 Ports are Makefile variables: `make run API_PORT=8091`. Changing one permanently
 means changing it in three places — the Makefile, `servers:` in `openapi.yaml`,
@@ -59,11 +65,13 @@ The frontend has no toolchain and no test runner of its own
 | `_docs/task-template.md` | the shape a groomed issue takes |
 | `_docs/_team/` | the role briefs the subagents run on |
 | `openapi.yaml` | the API contract, derived from the frontend client (#7) |
+| `Dockerfile` | the whole app as one image — Node checks the frontend, Python serves it |
 | `frontend/` | the whole UI, talking to the API — start at its README |
 | `backend/` | the FastAPI API, on a mock database — start at its README |
 | `backend/app/store.py` | **the storage seam** — the `Store` protocol |
 | `backend/app/sqlite_store.py` | the SQLite implementation of it |
 | `backend/app/auth.py` | password hashing, bearer tokens, `current_user` |
+| `backend/app/frontend.py` | serving the frontend from the API, when `NEXTLANE_FRONTEND` says where |
 | `backend/tests/` | written before the endpoints; the contract test guards drift |
 | `frontend/src/api/client.js` | **the only module that talks to a backend** |
 | `frontend/src/domain/` | pure logic: validation, workload (§22), focus ranking (§23) |

@@ -1,0 +1,32 @@
+# The build needs `backend/` and `frontend/` and nothing else. Everything below
+# is either noise, a local artefact, or somebody's data.
+
+.git
+.github
+.venv
+**/.venv
+**/__pycache__
+**/*.py[codz]
+.pytest_cache
+.ruff_cache
+**/.pytest_cache
+**/.ruff_cache
+
+# Local state, never somebody else's starting point: the image seeds its own.
+**/*.sqlite3
+**/*.sqlite3-shm
+**/*.sqlite3-wal
+
+.env
+.envrc
+
+# Documentation, the task runners and the tests are read by people and CI, not
+# by the image. Keeping them out keeps a docs edit from busting the build cache.
+_docs
+backend/tests
+src
+Makefile
+make.ps1
+Dockerfile
+.dockerignore
+*.md

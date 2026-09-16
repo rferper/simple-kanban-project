@@ -23,6 +23,10 @@
 API_PORT ?= 8001
 WEB_PORT ?= 8000
 
+# The container is one process serving both, so it has one port of its own.
+APP_PORT ?= 8000
+IMAGE    ?= nextlane
+
 BACKEND  := backend
 FRONTEND := frontend
 UV       ?= uv
@@ -33,6 +37,7 @@ PY ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null)
 
 .DEFAULT_GOAL := help
 .PHONY: help install run api web test test-one lint types check clean open require-python
+.PHONY: docker-build docker-run
 
 require-python:
 	@if [ -z "$(PY)" ]; then \
@@ -53,6 +58,9 @@ help: ## List the targets
 	@echo '  make test-one   one module:  make test-one T=test_auth'
 	@echo '  make open       open the app in a browser'
 	@echo '  make clean      remove caches'
+	@echo ''
+	@echo '  make docker-build   build the container image'
+	@echo '  make docker-run     run it — the whole app on one port'
 	@echo ''
 	@echo '  frontend  http://localhost:$(WEB_PORT)'
 	@echo '  API       http://localhost:$(API_PORT)   docs at /docs'
@@ -101,6 +109,15 @@ check: lint types test ## Everything that has to pass before a commit
 
 open: require-python ## Open the app in a browser
 	@$(PY) -c "import webbrowser; webbrowser.open('http://localhost:$(WEB_PORT)')"
+
+docker-build: ## Build the container image (the API serves the frontend)
+	docker build -t $(IMAGE) .
+
+docker-run: ## Run that image — the whole app on http://localhost:$(APP_PORT)
+	@echo 'NextLane  http://localhost:$(APP_PORT)  (docs at /docs)'
+	@echo 'sign in   researcher@example.com / nextlane'
+	@echo ''
+	docker run --rm -it -p $(APP_PORT):8000 -v nextlane-data:/data -e ANTHROPIC_API_KEY $(IMAGE)
 
 clean: ## Remove caches
 	@find . -type d -name __pycache__ -prune -exec rm -rf {} + 2>/dev/null || true

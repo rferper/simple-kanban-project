@@ -37,6 +37,19 @@ Then <http://localhost:8000>, and sign in with `researcher@example.com` /
 `nextlane`. `make` on its own lists every target; `make test` runs the suite;
 API docs are at <http://localhost:8001/docs>.
 
+**In a container** — one process, one port, the API serving the frontend:
+
+```sh
+make docker-build
+make docker-run       # http://localhost:8000
+```
+
+Nothing else is needed: the image carries the frontend, seeds its own database
+on the volume, and works with the AI feature switched off. Pass
+`-e ANTHROPIC_API_KEY=...` to switch it on. See
+[`_docs/decisions.md`](_docs/decisions.md) #23 for why the API serves the
+frontend there and two servers stay the way development runs.
+
 Either runner wraps these two commands, if you would rather run them yourself:
 
 ```sh
@@ -68,6 +81,7 @@ in-memory implementation, so neither can quietly drift from the other.
 | [`frontend/`](frontend) | the whole UI |
 | [`backend/`](backend) | the FastAPI API, on SQLite |
 | [`openapi.yaml`](openapi.yaml) | the API contract both sides answer to |
+| [`Dockerfile`](Dockerfile) | the whole app as one image |
 | [`_docs/specs.md`](_docs/specs.md) | the product specification — the source of truth |
 | [`_docs/process.md`](_docs/process.md) | how work moves from issue to merged |
 | [`_docs/decisions.md`](_docs/decisions.md) | calls already settled, and why |

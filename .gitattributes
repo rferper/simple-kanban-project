@@ -10,3 +10,7 @@ Makefile    text eol=lf
 *.js        text eol=lf
 *.yaml      text eol=lf
 *.yml       text eol=lf
+
+# Line-continuation in a RUN instruction breaks on a trailing carriage return.
+Dockerfile      text eol=lf
+.dockerignore   text eol=lf
