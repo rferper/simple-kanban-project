@@ -35,11 +35,12 @@ param(
     [int]$AppPort = 8000,
     [string]$Image = 'nextlane',
 
-    # A throwaway Postgres for the third implementation of the store contract.
-    # Not 5432, so it cannot collide with a Postgres somebody already runs.
+    # The local Postgres is the `db` service in docker-compose.yaml, and there
+    # is deliberately only one of it, so `run` and `compose-up` look at the same
+    # board. Two databases on it: `nextlane` for the app, `nextlane_test` for
+    # the store contract. Not 5432, so it cannot collide with a Postgres
+    # somebody already runs.
     [int]$DbPort = 55432,
-    [string]$DbContainer = 'nextlane-db',
-    [string]$DbImage = 'postgres:16-alpine',
 
     # For test-one:  .\make.ps1 test-one -T test_auth
     [string]$T = ''
@@ -50,7 +51,8 @@ $ErrorActionPreference = 'Stop'
 $Root     = $PSScriptRoot
 $Backend  = Join-Path $Root 'backend'
 $Frontend = Join-Path $Root 'frontend'
-$TestDsn  = "postgresql://postgres:nextlane@localhost:${DbPort}/nextlane_test"
+$DevDsn   = "postgresql://nextlane:nextlane@localhost:${DbPort}/nextlane"
+$TestDsn  = "postgresql://nextlane:nextlane@localhost:${DbPort}/nextlane_test"
 
 <#
   Run an external program.
@@ -111,8 +113,8 @@ function Show-Help {
     Write-Host '  .\make.ps1 api        run just the API'
     Write-Host '  .\make.ps1 web        run just the frontend'
     Write-Host '  .\make.ps1 test       run the test suite'
-    Write-Host '  .\make.ps1 postgres   start a throwaway Postgres for the Postgres tests'
-    Write-Host '  .\make.ps1 test-postgres  run the suite against it as well'
+    Write-Host '  .\make.ps1 postgres   start the local Postgres (before run)'
+    Write-Host '  .\make.ps1 test-postgres  run the suite against Postgres as well'
     Write-Host '  .\make.ps1 lint       lint the backend and check the frontend'
     Write-Host '  .\make.ps1 types      type-check the backend'
     Write-Host '  .\make.ps1 check      lint + types + tests'
@@ -155,6 +157,7 @@ function Invoke-Run {
     $py = Find-Python
 
     Write-Host 'NextLane'
+    Write-Host "  database  $DevDsn"
     Write-Host "  frontend  http://localhost:$WebPort"
     Write-Host "  API       http://localhost:$ApiPort  (docs at /docs)"
     Write-Host '  sign in   researcher@example.com / nextlane'
@@ -213,48 +216,38 @@ function Invoke-ComposeDown {
     Invoke-Native -File 'docker' -WorkingDirectory $Root -Arguments @('compose', 'down')
 }
 
-# Asking first rather than trying and ignoring the failure: `docker start` on a
-# container that does not exist writes an error to the console, and a task that
-# succeeds should not look like it broke.
-function Test-DbContainer {
-    $found = & docker ps --all --quiet --filter "name=^$DbContainer$"
-    return [bool]$found
-}
-
 function Invoke-Postgres {
     Assert-Docker
 
-    # Safe to run twice, which is the only way a task like this gets used.
-    if (Test-DbContainer) {
-        Invoke-Native -File 'docker' -Arguments @('start', $DbContainer) | Out-Null
-    }
-    else {
-        Invoke-Native -File 'docker' -Arguments @(
-            'run', '-d', '--name', $DbContainer,
-            '-e', 'POSTGRES_PASSWORD=nextlane',
-            '-e', 'POSTGRES_DB=nextlane_test',
-            '-p', "${DbPort}:5432",
-            $DbImage
+    Invoke-Native -File 'docker' -WorkingDirectory $Root -Arguments @(
+        'compose', 'up', '-d', '--wait', 'db'
+    )
+
+    # POSTGRES_DB creates the app's database, but only the first time the volume
+    # is built, and this has to be right for an existing one too. Asking which
+    # are there beats creating and ignoring the failure: `createdb` on an
+    # existing database exits non-zero, and that would be the last exit code
+    # this task leaves behind.
+    $existing = & docker compose exec -T db psql -U nextlane -d nextlane -tAc `
+        'SELECT datname FROM pg_database'
+    if ($existing -notcontains 'nextlane_test') {
+        Invoke-Native -File 'docker' -WorkingDirectory $Root -Arguments @(
+            'compose', 'exec', '-T', 'db', 'createdb', '-U', 'nextlane', 'nextlane_test'
         ) | Out-Null
     }
 
-    foreach ($attempt in 1..30) {
-        Invoke-Native -File 'docker' -IgnoreExitCode -Arguments @(
-            'exec', $DbContainer, 'pg_isready', '-q'
-        ) | Out-Null
-        if ($LASTEXITCODE -eq 0) { break }
-        Start-Sleep -Seconds 1
-    }
-
-    Write-Host "Postgres is up:  $TestDsn"
+    Write-Host ''
+    Write-Host 'Postgres is up.'
+    Write-Host "  app    $DevDsn"
+    Write-Host "  tests  $TestDsn"
 }
 
 function Invoke-PostgresStop {
     Assert-Docker
-    if (Test-DbContainer) {
-        Invoke-Native -File 'docker' -Arguments @('rm', '-f', $DbContainer) | Out-Null
-    }
-    Write-Host 'stopped'
+    # Keeps the board. `docker compose down -v` is how you throw it away.
+    Invoke-Native -File 'docker' -WorkingDirectory $Root -Arguments @(
+        'compose', 'stop', 'db'
+    )
 }
 
 function Invoke-TestPostgres {

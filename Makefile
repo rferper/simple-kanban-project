@@ -27,14 +27,16 @@ WEB_PORT ?= 8000
 APP_PORT ?= 8000
 IMAGE    ?= nextlane
 
-# A throwaway Postgres, for the third implementation of the store contract.
-# `make postgres` starts it, `make test-postgres` runs the suite against it, and
-# without it those tests skip. Not 5432, so it cannot collide with a Postgres
-# somebody already runs.
-DB_IMAGE     ?= postgres:16-alpine
-DB_CONTAINER ?= nextlane-db
-DB_PORT      ?= 55432
-TEST_DSN     ?= postgresql://postgres:nextlane@localhost:$(DB_PORT)/nextlane_test
+# The local Postgres is the `db` service in docker-compose.yaml, and there is
+# deliberately only one of it: `make run` and `docker compose up` look at the
+# same database, because two would mean work disappearing when you switched
+# between them (`_docs/decisions.md` #26). Two databases on it — `nextlane` for
+# the app, `nextlane_test` for the store contract.
+#
+# DEV_DSN has to match DEFAULT_DB in backend/app/dependencies.py.
+DB_PORT  ?= 55432
+DEV_DSN  ?= postgresql://nextlane:nextlane@localhost:$(DB_PORT)/nextlane
+TEST_DSN ?= postgresql://nextlane:nextlane@localhost:$(DB_PORT)/nextlane_test
 
 BACKEND  := backend
 FRONTEND := frontend
@@ -66,8 +68,8 @@ help: ## List the targets
 	@echo '  make web        run just the frontend'
 	@echo '  make test       run the test suite'
 	@echo '  make test-one   one module:  make test-one T=test_auth'
-	@echo '  make postgres   start a throwaway Postgres for the Postgres tests'
-	@echo '  make test-postgres  run the suite against it as well'
+	@echo '  make postgres   start the local Postgres (before make run)'
+	@echo '  make test-postgres  run the suite against Postgres as well'
 	@echo '  make open       open the app in a browser'
 	@echo '  make clean      remove caches'
 	@echo ''
@@ -86,6 +88,7 @@ install: ## Install backend dependencies (the frontend has none)
 
 run: require-python ## Run the whole app — API and frontend together (Ctrl-C stops both)
 	@echo 'NextLane'
+	@echo '  database  $(DEV_DSN)'
 	@echo '  frontend  http://localhost:$(WEB_PORT)'
 	@echo '  API       http://localhost:$(API_PORT)  (docs at /docs)'
 	@echo '  sign in   researcher@example.com / nextlane'
@@ -110,20 +113,19 @@ test-one: ## Run one module or pattern: make test-one T=test_auth
 test-postgres: ## Run the suite against Postgres as well (needs `make postgres`)
 	cd $(BACKEND) && NEXTLANE_TEST_POSTGRES='$(TEST_DSN)' $(UV) run pytest
 
-postgres: ## Start a throwaway Postgres for those tests
-	@docker start $(DB_CONTAINER) >/dev/null 2>&1 || \
-		docker run -d --name $(DB_CONTAINER) \
-			-e POSTGRES_PASSWORD=nextlane -e POSTGRES_DB=nextlane_test \
-			-p $(DB_PORT):5432 $(DB_IMAGE) >/dev/null
-	@for _ in $$(seq 1 30); do \
-		docker exec $(DB_CONTAINER) pg_isready -q 2>/dev/null && break; \
-		sleep 1; \
-	done
-	@echo 'Postgres is up:  $(TEST_DSN)'
+postgres: ## Start the local Postgres — the one `make run` expects
+	docker compose up -d --wait db
+	@# `POSTGRES_DB` creates the app's database, but only the first time the
+	@# volume is built, and this target has to be right for an existing one too.
+	@# "already exists" is the success case, hence the `|| true`.
+	@docker compose exec -T db createdb -U nextlane nextlane_test 2>/dev/null || true
+	@echo ''
+	@echo 'Postgres is up.'
+	@echo '  app    $(DEV_DSN)'
+	@echo '  tests  $(TEST_DSN)'
 
-postgres-stop: ## Remove that container, data and all
-	@docker rm -f $(DB_CONTAINER) >/dev/null 2>&1 || true
-	@echo 'stopped'
+postgres-stop: ## Stop it, keeping the board (docker compose down -v drops it)
+	docker compose stop db
 
 lint: ## Lint and format-check the backend, and check the frontend
 	cd $(BACKEND) && $(UV) run ruff check .

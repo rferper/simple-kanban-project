@@ -446,6 +446,10 @@ container or a connection string, and `_docs/specs.md` §26 is explicit that thi
 project is not to spend itself on infrastructure. Postgres is what you point it
 at when the data has to outlive the container.
 
+> **Superseded by #26.** The default was wrong: this project runs on Postgres,
+> and leaving SQLite in front of it meant `make run` and `docker compose up`
+> looked at different databases. SQLite is still supported, as the fallback.
+
 `app/postgres_store.py` is `app/sqlite_store.py`'s schema in Postgres types —
 `TIMESTAMPTZ`, `DATE`, `BOOLEAN`, `DOUBLE PRECISION` — behind the same `Store`
 protocol, with hand-written SQL and no ORM for the same reason as #15. The three
@@ -490,10 +494,12 @@ get right by hand, and the two of them are now one.
 
 Three calls in it worth naming:
 
-**The database port is not published.** The app reaches Postgres over the
-compose network, and nothing on the host needs it — which also means this cannot
-collide with a Postgres somebody already runs on 5432. `docker compose exec db
-psql -U nextlane nextlane` is how you look inside.
+**The database port is published on 55432** — not 5432, so it cannot collide
+with a Postgres somebody already runs. It was unpublished at first, on the
+grounds that only the app needed it. That was wrong the moment `make run` needed
+it too: #26 makes this `db` service the only Postgres this project has, and
+something on the host has to be able to reach it. `docker compose exec db psql
+-U nextlane nextlane` still works for looking inside.
 
 **`app` waits for a health check, not for the port.** Postgres accepts
 connections briefly while it initialises and then restarts, so a container that
@@ -512,3 +518,50 @@ Cost accepted: a fourth place that knows how to start this app, after the
 Makefile, `make.ps1` and the `Dockerfile`. It is the one that composes the other
 three rather than repeating them — it builds the `Dockerfile` and sets the same
 `NEXTLANE_DB` a human would.
+
+## 26. Postgres is the default, and there is only one of it
+
+Two corrections to #24, both from the same afternoon.
+
+**Postgres is what this runs on.** `NEXTLANE_DB` unset now means the local
+Postgres, not a SQLite file. #24 had it the other way round, on the reasoning
+that a fresh clone should need no server — but that made SQLite the thing you
+got by accident, and Postgres the thing you had to remember. The project is
+deploying on Postgres; the database you develop against should be the database
+you ship on.
+
+SQLite is not going anywhere. It is still a first-class implementation of the
+`Store` protocol, still run against the contract in `tests/test_store.py`, and
+still one setting away for a machine with no Docker:
+
+    NEXTLANE_DB=backend/nextlane.sqlite3
+
+That is the difference between a fallback and a default. `make test` still needs
+no server, because the endpoint suite runs on the dict.
+
+**There is one local Postgres, and compose owns it.** This is the correction
+that matters, because the alternative had already cost a board. `make run`, the
+`docker compose` app and `make test-postgres` had been pointed at two different
+servers, and work saved through one was invisible through the other — which
+looks exactly like the app not saving anything. So:
+
+* the `db` service in `docker-compose.yaml` is the only Postgres this project
+  starts, and `make postgres` is `docker compose up -d --wait db`;
+* it publishes 55432, so `make run` on the host reaches the same database the
+  container does;
+* two databases on it — `nextlane` for the app, `nextlane_test` for the store
+  contract, which is truncated between tests and must never be the other one.
+
+**`DEFAULT_DB` and the task runners are checked against each other.**
+`tests/test_dependencies.py` reads the DSN out of the `Makefile`, out of
+`make.ps1` and the port and credentials out of `docker-compose.yaml`, and fails
+if any of them names a different database from `app/dependencies.py`. Four files
+had to agree and nothing was checking that they did; a comment saying "keep
+these in step" is not a mechanism.
+
+Cost accepted: `make run` now needs Docker, or an explicit `NEXTLANE_DB`. That
+is a real step backwards for a fresh clone, and it is the price of the app
+having one obvious database instead of a quiet choice between two. The failure
+is at least a good one — `PostgresStore` probes the connection before it opens a
+pool, so an unreachable server says so immediately, names the database with the
+password stripped out, and gives both ways forward.

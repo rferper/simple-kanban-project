@@ -56,8 +56,13 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12-slim-bookworm AS runtime
 
-# NEXTLANE_FRONTEND is the setting that makes this process serve the whole app;
-# NEXTLANE_DB puts the database on the volume rather than inside the container.
+# NEXTLANE_FRONTEND is the setting that makes this process serve the whole app.
+#
+# NEXTLANE_DB is SQLite here, which is the one place it still is. Postgres is
+# what NextLane runs on (`_docs/decisions.md` #26) and `docker-compose.yaml`
+# sets a DSN that overrides this — but a lone `docker run` has no server to
+# talk to, and a container that refused to start without one would be a worse
+# answer than a file on the volume.
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PATH="/app/backend/.venv/bin:$PATH" \

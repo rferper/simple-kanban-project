@@ -29,7 +29,7 @@ backend/.venv` clears it.
 | install dependencies | `make install` | `cd backend && uv sync` |
 | the whole test suite | `make test` | `cd backend && uv run pytest` |
 | one test module | `make test-one T=test_auth` | `uv run pytest -k test_auth` |
-| a throwaway Postgres | `make postgres` | `postgres:16-alpine` on 55432; `make postgres-stop` removes it |
+| the database | `make postgres` | `docker compose up -d --wait db` — needed before `make run` |
 | the suite against Postgres too | `make test-postgres` | the same suite with `NEXTLANE_TEST_POSTGRES` set |
 | list every target | `make` | — |
 | lint | `make lint` | Ruff over the backend, `frontend/check.mjs` over the frontend |
@@ -59,9 +59,16 @@ The frontend has no toolchain and no test runner of its own
 (`_docs/decisions.md` #3).
 
 `NEXTLANE_DB` chooses the database and its shape chooses the implementation: a
-path is SQLite (the default), `:memory:` is the dict, a `postgresql://` DSN is
-Postgres (`_docs/decisions.md` #24). The Postgres tests skip unless
-`NEXTLANE_TEST_POSTGRES` points at a throwaway server; CI always sets it.
+`postgresql://` DSN is Postgres (**the default**), a path is SQLite, `:memory:`
+is the dict (`_docs/decisions.md` #24, #26). Unset, it is the local `db` service
+from `docker-compose.yaml` on 55432 — **the only Postgres this project starts**,
+so `make run` and `docker compose up` are one board. The Postgres tests skip
+unless `NEXTLANE_TEST_POSTGRES` points at a throwaway database; CI always sets it.
+
+`DEFAULT_DB` in `backend/app/dependencies.py`, `DEV_DSN` in the `Makefile`,
+`$DevDsn` in `make.ps1` and the credentials in `docker-compose.yaml` must all
+name the same database. `tests/test_dependencies.py` reads all four and fails if
+they disagree.
 
 ## Layout
 

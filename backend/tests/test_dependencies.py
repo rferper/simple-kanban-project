@@ -6,10 +6,13 @@ SQLite filename would create a file called `postgresql:` and serve an empty
 board — so the routing is tested rather than assumed.
 """
 
+import re
+from pathlib import Path
+
 import pytest
 
 from app.dependencies import (
-    DEFAULT_DB_PATH,
+    DEFAULT_DB,
     build_store,
     database_path,
     is_postgres,
@@ -18,6 +21,8 @@ from app.postgres_store import safe_dsn
 from app.sqlite_store import SqliteStore
 from app.store import InMemoryStore
 from tests.conftest import POSTGRES_DSN
+
+REPO = Path(__file__).resolve().parents[2]
 
 
 class TestWhichDatabase:
@@ -64,18 +69,69 @@ class TestWhichDatabase:
 
 
 class TestWhereItLooks:
-    def test_it_defaults_to_the_file_beside_the_package(self, monkeypatch):
+    def test_it_defaults_to_postgres(self, monkeypatch):
+        """Postgres is what this runs on (`_docs/decisions.md` #26)."""
         monkeypatch.delenv("NEXTLANE_DB", raising=False)
-        assert database_path() == str(DEFAULT_DB_PATH)
+        assert database_path() == DEFAULT_DB
+        assert is_postgres(database_path())
 
     def test_the_setting_wins(self, monkeypatch):
         monkeypatch.setenv("NEXTLANE_DB", "postgresql://user:pw@localhost/nextlane")
         assert database_path() == "postgresql://user:pw@localhost/nextlane"
 
+    def test_a_path_still_gets_sqlite(self, monkeypatch, tmp_path):
+        """The fallback is still one setting away, for a machine with no Docker."""
+        monkeypatch.setenv("NEXTLANE_DB", str(tmp_path / "nextlane.sqlite3"))
+        assert isinstance(build_store(database_path()), SqliteStore)
+
     def test_an_empty_setting_is_the_default(self, monkeypatch):
         """An unset variable and one set to nothing mean the same thing."""
         monkeypatch.setenv("NEXTLANE_DB", "")
-        assert database_path() == str(DEFAULT_DB_PATH)
+        assert database_path() == DEFAULT_DB
+
+
+class TestOneDatabase:
+    """The default and the task runners must name the same database.
+
+    They did not, once, and the result was a board that looked empty: `make run`
+    went to one Postgres while `docker compose up` went to another, so work
+    saved through one was invisible through the other. These read the runners
+    rather than trusting them (`_docs/decisions.md` #26).
+    """
+
+    def dsn_from_makefile(self) -> str:
+        text = (REPO / "Makefile").read_text(encoding="utf-8")
+        port = re.search(r"^DB_PORT\s*\?=\s*(\S+)", text, re.MULTILINE)
+        dsn = re.search(r"^DEV_DSN\s*\?=\s*(\S+)", text, re.MULTILINE)
+        assert port and dsn, "Makefile no longer declares DB_PORT and DEV_DSN"
+        return dsn.group(1).replace("$(DB_PORT)", port.group(1))
+
+    def dsn_from_powershell(self) -> str:
+        text = (REPO / "make.ps1").read_text(encoding="utf-8")
+        port = re.search(r"\[int\]\$DbPort\s*=\s*(\d+)", text)
+        dsn = re.search(r"^\$DevDsn\s*=\s*\"(\S+)\"", text, re.MULTILINE)
+        assert port and dsn, "make.ps1 no longer declares $DbPort and $DevDsn"
+        return dsn.group(1).replace("${DbPort}", port.group(1))
+
+    def test_the_makefile_agrees_with_the_default(self):
+        assert self.dsn_from_makefile() == DEFAULT_DB
+
+    def test_the_powershell_runner_agrees_too(self):
+        """The two runners are two front doors onto the same commands."""
+        assert self.dsn_from_powershell() == DEFAULT_DB
+
+    def test_compose_serves_that_same_database(self):
+        """Different host — `db` inside the network, localhost outside — but it
+        has to be the same server, the same credentials and the same database."""
+        compose = (REPO / "docker-compose.yaml").read_text(encoding="utf-8")
+        port = re.search(r"DB_PORT:-(\d+)", compose)
+        assert port, "docker-compose.yaml no longer publishes the database port"
+        assert port.group(1) in DEFAULT_DB, "compose publishes a port nothing connects to"
+
+        for default in ("POSTGRES_USER:-", "POSTGRES_PASSWORD:-", "POSTGRES_DB:-"):
+            value = re.search(re.escape(default) + r"(\w+)", compose)
+            assert value, f"docker-compose.yaml no longer sets {default}"
+            assert value.group(1) in DEFAULT_DB, f"{default}{value.group(1)} is not in DEFAULT_DB"
 
 
 @pytest.mark.skipif(not POSTGRES_DSN, reason="NEXTLANE_TEST_POSTGRES is not set")

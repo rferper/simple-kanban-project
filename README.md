@@ -19,6 +19,7 @@ job card. Everything else works with AI switched off.
 
 ```sh
 make install   # once
+make postgres  # the database, once per reboot
 make run       # both servers; Ctrl-C stops both
 ```
 
@@ -26,8 +27,14 @@ make run       # both servers; Ctrl-C stops both
 
 ```powershell
 .\make.ps1 install
+.\make.ps1 postgres
 .\make.ps1 run
 ```
+
+`make postgres` starts the `db` service from
+[`docker-compose.yaml`](docker-compose.yaml), and it is the only Postgres this
+project runs — so `make run` and `docker compose up` show you the same board.
+No Docker? `NEXTLANE_DB=backend/nextlane.sqlite3` falls back to a file.
 
 `make.ps1` exists because GNU make on Windows runs recipes through `cmd.exe`,
 and the Makefile's recipes are POSIX shell. The two files are two front doors
@@ -81,22 +88,19 @@ against [`openapi.yaml`](openapi.yaml).
 The two are **wired together**: the frontend signs in, holds the token, and every
 card you move is a call to the API. There are no mocks left in the frontend.
 
-The board is kept in SQLite at `backend/nextlane.sqlite3`, seeded on first run
-and gitignored — delete it and the next start reseeds. It is reached only through
-the `Store` protocol, and the whole API test suite runs against both that and the
-in-memory implementation, so neither can quietly drift from the other.
-
-**Postgres is supported for deployments.** One setting switches it, and its
-shape is what chooses the implementation:
+**The board is kept in Postgres**, seeded on first run. One setting says where,
+and the shape of it chooses the implementation:
 
 ```sh
-NEXTLANE_DB=postgresql://user:password@host/nextlane
+NEXTLANE_DB=postgresql://user:password@host/nextlane   # the default
+NEXTLANE_DB=backend/nextlane.sqlite3                   # a file, for no-Docker
+NEXTLANE_DB=:memory:                                   # a throwaway run
 ```
 
-SQLite stays the default, so a fresh clone still needs no server and no
-connection string. The store contract in `backend/tests/test_store.py` runs
-against all three implementations — see
-[`_docs/decisions.md`](_docs/decisions.md) #24.
+All three are implementations of one `Store` protocol, and the contract in
+`backend/tests/test_store.py` runs against every one of them, so none can
+quietly drift from the others. See [`_docs/decisions.md`](_docs/decisions.md)
+#24 and #26.
 
 ## Where everything is
 

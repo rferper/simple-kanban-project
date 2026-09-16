@@ -8,13 +8,15 @@
 # one process serving the API and the frontend (`_docs/decisions.md` #23),
 # pointed at `db` by NEXTLANE_DB (#24).
 #
-# The database port is deliberately not published. The app reaches it over the
-# compose network, and nothing on the host needs it — which also means this
-# cannot collide with a Postgres you already run on 5432. To look inside:
+# `db` is the only Postgres this project runs. `make postgres` starts this same
+# service, and `make run` on the host connects to it on 55432 — so the board you
+# see through compose and the board you see through `make run` are one board.
+# Two servers is how work ends up invisible (`_docs/decisions.md` #26).
+#
+# 55432 rather than 5432, so it cannot collide with a Postgres already running
+# on this machine. To look inside:
 #
 #   docker compose exec db psql -U nextlane nextlane
-#
-# and if you really do want it on the host, add a `ports:` entry to `db`.
 
 name: nextlane
 
@@ -28,6 +30,9 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-nextlane}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      # Published so `make run` outside compose talks to this same database.
+      - "${DB_PORT:-55432}:5432"
     healthcheck:
       # `app` waits for this rather than for the port to open: Postgres accepts
       # connections briefly during startup and then restarts, and a container

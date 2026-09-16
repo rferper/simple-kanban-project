@@ -1,11 +1,11 @@
-"""Postgres behind the `Store` protocol.
+"""Postgres behind the `Store` protocol — what NextLane runs on.
 
-SQLite is what a fresh clone gets and what development runs on: one file, no
-server, `make install` and you have a board. This is the other end — the
-database you would actually deploy against, where the data outlives the
-container and more than one process can hold a connection.
+`make postgres` starts one locally, `docker-compose.yaml` runs one beside the
+app, and `app/dependencies.py` points at the first of those unless `NEXTLANE_DB`
+says otherwise. `app/sqlite_store.py` is still there and still supported, for a
+machine with no Docker (`_docs/decisions.md` #26).
 
-**It is a third implementation of one contract, not a second way to write the
+**It is one implementation of a contract, not a second way to write the
 backend.** `tests/test_store.py` runs the same tests against the dict, SQLite
 and this; `app/service.py`, `app/auth.py` and the routers cannot tell which one
 they have. The schema below is `app/sqlite_store.py`'s schema in Postgres
@@ -191,11 +191,35 @@ class PostgresStore:
 
     def __init__(self, dsn: str, *, min_size: int = 1, max_size: int = 8) -> None:
         self.dsn = dsn
+
+        # One plain connection before the pool exists, purely to fail well. A
+        # pool answers an unreachable server by retrying in the background, so
+        # the first symptom would be a request timing out half a minute later
+        # with a message that names neither the database nor the fix.
+        try:
+            psycopg.connect(dsn, connect_timeout=5).close()
+        except psycopg.OperationalError as unreachable:
+            # libpq's own reason distinguishes "nothing is listening" from
+            # "wrong password", which the two hints below cannot. It names the
+            # user but never the password.
+            reason = str(unreachable).strip().splitlines()[0]
+            raise RuntimeError(
+                f"Cannot reach Postgres at {safe_dsn(dsn)}\n"
+                f"  {reason}\n"
+                "  Start the development database:  make postgres\n"
+                "  Or use a file instead:           NEXTLANE_DB=backend/nextlane.sqlite3"
+            ) from unreachable
+
         self._pool = ConnectionPool(
             dsn,
             min_size=min_size,
             max_size=max_size,
             open=True,
+            # Waiting half a minute to be told the server is not there is not
+            # useful to anyone. This is how long a request waits for a
+            # connection, and on startup it is how long a wrong DSN takes to
+            # say so.
+            timeout=10,
             kwargs={
                 # Timestamps go in and come out UTC whatever the server is set
                 # to, so this cannot disagree with SQLite about what a stored
@@ -203,6 +227,7 @@ class PostgresStore:
                 "options": "-c timezone=UTC",
             },
         )
+
         self._migrate()
 
     @contextmanager

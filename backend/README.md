@@ -1,12 +1,13 @@
 # NextLane — backend
 
 FastAPI, serving the contract in [`../openapi.yaml`](../openapi.yaml), against
-SQLite by default and Postgres when you point it at one.
+Postgres.
 
 ## Running it
 
 ```sh
 make install    # from the repository root
+make postgres   # the database — once per reboot
 make api        # just this; `make run` also starts the frontend
 ```
 
@@ -70,48 +71,61 @@ dependency. The schema is normalised rather than a JSON blob, because
 `_docs/specs.md` §24 describes real relations and a blob would hide every one of
 them from the database.
 
-The file lives at `backend/nextlane.sqlite3` and is seeded with the §31 fixtures
-the first time it is created. It is gitignored and disposable: delete it and the
-next start reseeds.
-
 **`NEXTLANE_DB` chooses the database, and its shape chooses the
 implementation:**
 
 ```sh
-NEXTLANE_DB=/some/path/nextlane.sqlite3          # a path  → SQLite (the default)
+NEXTLANE_DB=postgresql://user:pw@host/nextlane   # a DSN   → Postgres (the default)
+NEXTLANE_DB=/some/path/nextlane.sqlite3          # a path  → SQLite
 NEXTLANE_DB=:memory:                             # the dict, for a throwaway run
-NEXTLANE_DB=postgresql://user:pw@host/nextlane   # a DSN   → Postgres
 ```
 
 One setting rather than two, because "where the data is" is one decision;
 `app/dependencies.py` is the only place that reads it.
 
-### Postgres
+### Postgres, which is what this runs on
 
-`app/postgres_store.py`, for when the data has to outlive the container.
-It is the same schema in Postgres types — `TIMESTAMPTZ`, `DATE`, `BOOLEAN`,
-`DOUBLE PRECISION` — behind the same protocol, still hand-written SQL and still
-no ORM. A connection pool rather than one locked connection, every connection
-pinned to UTC, and seeding behind an advisory lock so two containers starting at
-once against one empty database cannot both fill it (`_docs/decisions.md` #24).
+`app/postgres_store.py`. The same schema in Postgres types — `TIMESTAMPTZ`,
+`DATE`, `BOOLEAN`, `DOUBLE PRECISION` — behind the same protocol, still
+hand-written SQL and still no ORM. A connection pool rather than one locked
+connection, every connection pinned to UTC, and seeding behind an advisory lock
+so two containers starting at once against one empty database cannot both fill
+it (`_docs/decisions.md` #24).
 
 `psycopg[binary,pool]` is the only dependency it adds, and it is imported lazily
 — a SQLite installation never loads it.
 
-**SQLite is still the default and still supported.** A fresh clone gets a
-working board with no server, no container and no connection string.
+**There is one local Postgres**: the `db` service in `docker-compose.yaml`,
+published on 55432. `make run` and `docker compose up` both use it, on purpose —
+two servers is how work ends up invisible (#26). Two databases on it, `nextlane`
+for the app and `nextlane_test` for the store contract.
 
-To run the suite against Postgres as well, from the repository root:
+Unset, `NEXTLANE_DB` points at exactly that. If it is not running you get a
+message saying so, naming the database with the password stripped out.
+
+### SQLite, which is the fallback
+
+`app/sqlite_store.py`, one setting away, for a machine with no Docker:
 
 ```sh
-make postgres        # a throwaway postgres:16-alpine on 55432
-make test-postgres   # the whole suite, with NEXTLANE_TEST_POSTGRES set
-make postgres-stop   # when you are done with it
+NEXTLANE_DB=backend/nextlane.sqlite3
 ```
 
-Without that variable the Postgres runs skip and everything else is unaffected.
-CI always sets it, against a service container, so the store contract really is
-checked against all three implementations on every push.
+It is a first-class implementation and stays one — the store contract runs
+against it on every push. It is simply not what you get by accident any more.
+The file is gitignored and disposable: delete it and the next start reseeds.
+
+### Running the suite against Postgres
+
+```sh
+make postgres        # the db service, if it is not already up
+make test-postgres   # the whole suite, with NEXTLANE_TEST_POSTGRES set
+```
+
+Without that variable the Postgres runs skip and everything else is unaffected,
+so `make test` still needs no server. CI always sets it, against a service
+container, so the store contract really is checked against all three
+implementations on every push.
 
 **The implementations are interchangeable, and a test keeps them that way.**
 `tests/test_store.py` runs one contract against all three, and `tests/conftest.py`
