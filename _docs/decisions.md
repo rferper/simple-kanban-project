@@ -565,3 +565,41 @@ having one obvious database instead of a quiet choice between two. The failure
 is at least a good one — `PostgresStore` probes the connection before it opens a
 pool, so an unreachable server says so immediately, names the database with the
 password stripped out, and gives both ways forward.
+
+## 27. The integration tests run the real stack, in their own project
+
+`backend/tests/test_compose.py` brings `docker-compose.yaml` up, tests against
+it, and takes it down. It exists because the other five hundred tests run the
+application in-process, against a store a fixture handed them, and cannot fail
+for any of the reasons a container can: an image that does not build, a frontend
+file the `.dockerignore` swallowed, an app that started before the database was
+ready, a published port that reaches a different database from the one the app
+is using.
+
+**The rule for what belongs there is "only what needs the containers."** A
+business rule — which statuses a Learning card may hold, what `completedAt` does
+— stays in `tests/test_cards.py`, where it costs milliseconds instead of a
+minute. The scenarios are: the image starts healthy and not as root; the
+frontend is served with its API base pointed at the right origin; the API is
+closed without a token and opens with one; a card written through the API is
+visible in Postgres from the host on the published port; the advert reader still
+works with no API key; a board and a session survive `restart` and `down`/`up`;
+and a fresh volume seeds exactly once.
+
+**They are opt-in.** Marked `integration` and deselected by `addopts`, so
+`make test` still needs no Docker and still takes thirty seconds.
+`make test-integration` runs them, and CI runs them as a second job.
+
+**They never touch the development stack.** Their own compose project
+(`nextlane-it`), their own ports (18000 and 15432) and therefore their own
+volume. The teardown deletes that volume, so the project name is asserted at
+import, asserted again on the line that does the deleting, and three tests read
+the development project and ports out of `docker-compose.yaml` and the `Makefile`
+to check they are still different. That is more belt than most things here get,
+and it is proportionate: the failure mode is deleting somebody's board, which is
+how #26 started.
+
+Cost accepted: about a minute a run, a second CI job, and a test file that
+shells out to `docker compose` — which means it is testing the same file it
+documents, and will need updating whenever the compose file changes shape. That
+is the point of it.

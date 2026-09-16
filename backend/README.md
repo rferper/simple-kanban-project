@@ -58,6 +58,18 @@ uv run pytest tests/test_cards.py   # one module
 uv run pytest -k archive            # one behaviour
 ```
 
+```sh
+make test-integration               # the real docker-compose.yaml stack
+```
+
+Those need Docker and take about a minute, so they are marked `integration` and
+deselected from `make test`. They build the image, start the stack under their
+own compose project on their own ports, and check the things no in-process test
+can reach: that the frontend is really in the image, that the app finds Postgres
+at `db:5432`, that the published port is the same database, and that a board
+survives a restart. See `tests/test_compose.py` for what belongs there and what
+does not.
+
 They were written before the endpoints existed and they are the specification of
 what the endpoints do. `tests/test_contract.py` is the one to watch: it compares
 every path and method in `openapi.yaml` against the running app in both

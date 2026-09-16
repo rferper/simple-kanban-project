@@ -31,6 +31,7 @@ backend/.venv` clears it.
 | one test module | `make test-one T=test_auth` | `uv run pytest -k test_auth` |
 | the database | `make postgres` | `docker compose up -d --wait db` — needed before `make run` |
 | the suite against Postgres too | `make test-postgres` | the same suite with `NEXTLANE_TEST_POSTGRES` set |
+| the compose stack, tested | `make test-integration` | `pytest -m integration` — builds and runs the real stack |
 | list every target | `make` | — |
 | lint | `make lint` | Ruff over the backend, `frontend/check.mjs` over the frontend |
 | type-check | `make types` | `uv run ty check` (the `app` package) |
@@ -41,8 +42,9 @@ backend/.venv` clears it.
 | stop those | `make compose-down` | keeps the data; `docker compose down -v` drops it |
 
 CI runs `make lint`, `make types` and `make test` on Linux for every push and
-pull request (`.github/workflows/check.yml`) — through the Makefile, so there is
-only one copy of how to check this project.
+pull request, and `make test-integration` as a second job
+(`.github/workflows/check.yml`) — through the Makefile, so there is only one
+copy of how to check this project.
 
 Frontend <http://localhost:8000>, API <http://localhost:8001>, docs at `/docs`.
 Sign in with `researcher@example.com` / `nextlane`.
@@ -92,6 +94,7 @@ they disagree.
 | `backend/app/auth.py` | password hashing, bearer tokens, `current_user` |
 | `backend/app/frontend.py` | serving the frontend from the API, when `NEXTLANE_FRONTEND` says where |
 | `backend/tests/` | written before the endpoints; the contract test guards drift |
+| `backend/tests/test_compose.py` | the real stack, marked `integration` and opt-in |
 | `frontend/src/api/client.js` | **the only module that talks to a backend** |
 | `frontend/src/domain/` | pure logic: validation, workload (§22), focus ranking (§23) |
 | `src/simple_kanban_project/` | uv package stub — see Rules |

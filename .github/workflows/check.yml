@@ -86,3 +86,33 @@ jobs:
       - name: Contract parses
         run: uv run python -c "import yaml, pathlib; yaml.safe_load(pathlib.Path('../openapi.yaml').read_text(encoding='utf-8')); print('openapi.yaml parses')"
         working-directory: backend
+
+  # A separate job because it is a different kind of slow: it builds the image
+  # and runs the real docker-compose.yaml stack. Nothing above can fail for the
+  # reasons this catches, and nothing here re-tests a business rule.
+  integration:
+    name: the compose stack
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked
+        working-directory: backend
+
+      # Through the Makefile, like every other check in this file. The suite
+      # brings the stack up and takes it down itself, under its own compose
+      # project — see backend/tests/test_compose.py.
+      - name: Integration tests
+        run: make test-integration
+
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -p nextlane-it logs --tail 100

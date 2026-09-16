@@ -33,7 +33,12 @@ package = false
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-q"
+# The integration tests need Docker and take about a minute, so they are opt-in:
+# `make test-integration` passes `-m integration`, which overrides this.
+addopts = "-q -m 'not integration'"
+markers = [
+    "integration: runs the real docker-compose.yaml stack (see tests/test_compose.py)",
+]
 
 [tool.ruff]
 line-length = 100

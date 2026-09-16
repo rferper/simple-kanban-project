@@ -25,7 +25,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'lint', 'types', 'check', 'open', 'clean', 'docker-build', 'docker-run', 'compose-up', 'compose-down',
-        'postgres', 'postgres-stop', 'test-postgres')]
+        'postgres', 'postgres-stop', 'test-postgres', 'test-integration')]
     [string]$Target = 'help',
 
     [int]$ApiPort = 8001,
@@ -115,6 +115,7 @@ function Show-Help {
     Write-Host '  .\make.ps1 test       run the test suite'
     Write-Host '  .\make.ps1 postgres   start the local Postgres (before run)'
     Write-Host '  .\make.ps1 test-postgres  run the suite against Postgres as well'
+    Write-Host '  .\make.ps1 test-integration  run the compose stack and test against it'
     Write-Host '  .\make.ps1 lint       lint the backend and check the frontend'
     Write-Host '  .\make.ps1 types      type-check the backend'
     Write-Host '  .\make.ps1 check      lint + types + tests'
@@ -250,6 +251,16 @@ function Invoke-PostgresStop {
     )
 }
 
+function Invoke-TestIntegration {
+    Assert-Uv
+    Assert-Docker
+    # Its own compose project and its own ports, so this cannot touch - or be
+    # confused with - a development stack that is already running.
+    Invoke-Native -File 'uv' -WorkingDirectory $Backend -Arguments @(
+        'run', 'pytest', '-m', 'integration'
+    )
+}
+
 function Invoke-TestPostgres {
     Assert-Uv
     $env:NEXTLANE_TEST_POSTGRES = $TestDsn
@@ -354,4 +365,5 @@ switch ($Target) {
     'postgres'      { Invoke-Postgres }
     'postgres-stop' { Invoke-PostgresStop }
     'test-postgres' { Invoke-TestPostgres }
+    'test-integration' { Invoke-TestIntegration }
 }

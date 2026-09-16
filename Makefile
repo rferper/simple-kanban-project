@@ -49,7 +49,7 @@ PY ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null)
 .DEFAULT_GOAL := help
 .PHONY: help install run api web test test-one lint types check clean open require-python
 .PHONY: docker-build docker-run compose-up compose-down
-.PHONY: test-postgres postgres postgres-stop
+.PHONY: test-postgres test-integration postgres postgres-stop
 
 require-python:
 	@if [ -z "$(PY)" ]; then \
@@ -70,6 +70,7 @@ help: ## List the targets
 	@echo '  make test-one   one module:  make test-one T=test_auth'
 	@echo '  make postgres   start the local Postgres (before make run)'
 	@echo '  make test-postgres  run the suite against Postgres as well'
+	@echo '  make test-integration  run the compose stack and test against it'
 	@echo '  make open       open the app in a browser'
 	@echo '  make clean      remove caches'
 	@echo ''
@@ -112,6 +113,11 @@ test-one: ## Run one module or pattern: make test-one T=test_auth
 
 test-postgres: ## Run the suite against Postgres as well (needs `make postgres`)
 	cd $(BACKEND) && NEXTLANE_TEST_POSTGRES='$(TEST_DSN)' $(UV) run pytest
+
+test-integration: ## Build and run the compose stack, and test against it
+	@# Its own compose project and its own ports, so this cannot touch — or be
+	@# confused with — a development stack that is already running.
+	cd $(BACKEND) && $(UV) run pytest -m integration
 
 postgres: ## Start the local Postgres — the one `make run` expects
 	docker compose up -d --wait db
