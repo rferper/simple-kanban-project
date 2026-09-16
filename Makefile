@@ -49,7 +49,7 @@ PY ?= $(shell command -v python3 2>/dev/null || command -v python 2>/dev/null)
 .DEFAULT_GOAL := help
 .PHONY: help install run api web test test-one lint types check clean open require-python
 .PHONY: docker-build docker-run compose-up compose-down
-.PHONY: test-postgres test-integration postgres postgres-stop
+.PHONY: test-postgres test-integration test-e2e postgres postgres-stop
 
 require-python:
 	@if [ -z "$(PY)" ]; then \
@@ -71,6 +71,7 @@ help: ## List the targets
 	@echo '  make postgres   start the local Postgres (before make run)'
 	@echo '  make test-postgres  run the suite against Postgres as well'
 	@echo '  make test-integration  run the compose stack and test against it'
+	@echo '  make test-e2e   drive the app in a browser against that stack'
 	@echo '  make open       open the app in a browser'
 	@echo '  make clean      remove caches'
 	@echo ''
@@ -114,6 +115,13 @@ test-one: ## Run one module or pattern: make test-one T=test_auth
 test-postgres: ## Run the suite against Postgres as well (needs `make postgres`)
 	cd $(BACKEND) && NEXTLANE_TEST_POSTGRES='$(TEST_DSN)' $(UV) run pytest
 
+test-e2e: ## Drive the app in a real browser, against the compose stack
+	@# Idempotent and quick once the browser is there; a first run downloads it.
+	cd $(BACKEND) && $(UV) run playwright install chromium
+	@# A failed browser test with nothing but an assertion message is a bad
+	@# afternoon. These leave a screenshot and a trace in test-results/.
+	$(UV) run --project $(BACKEND) pytest e2e 		--screenshot=only-on-failure --tracing=retain-on-failure
+
 test-integration: ## Build and run the compose stack, and test against it
 	@# Its own compose project and its own ports, so this cannot touch — or be
 	@# confused with — a development stack that is already running.
@@ -133,9 +141,13 @@ postgres: ## Start the local Postgres — the one `make run` expects
 postgres-stop: ## Stop it, keeping the board (docker compose down -v drops it)
 	docker compose stop db
 
-lint: ## Lint and format-check the backend, and check the frontend
+lint: ## Lint and format-check the backend and e2e, and check the frontend
 	cd $(BACKEND) && $(UV) run ruff check .
 	cd $(BACKEND) && $(UV) run ruff format --check .
+	@# e2e/ is outside the backend, so ruff is pointed at it with the same
+	@# configuration rather than being left to find defaults up the tree.
+	cd $(BACKEND) && $(UV) run ruff check --config pyproject.toml ../e2e
+	cd $(BACKEND) && $(UV) run ruff format --check --config pyproject.toml ../e2e
 	@$(PY) -c "import shutil,sys; sys.exit(0 if shutil.which('node') else 1)" \
 		&& node $(FRONTEND)/check.mjs \
 		|| echo 'frontend: skipped (node not on PATH)'

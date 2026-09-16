@@ -32,6 +32,7 @@ backend/.venv` clears it.
 | the database | `make postgres` | `docker compose up -d --wait db` — needed before `make run` |
 | the suite against Postgres too | `make test-postgres` | the same suite with `NEXTLANE_TEST_POSTGRES` set |
 | the compose stack, tested | `make test-integration` | `pytest -m integration` — builds and runs the real stack |
+| the app in a browser | `make test-e2e` | Playwright over the compose stack — `e2e/` |
 | list every target | `make` | — |
 | lint | `make lint` | Ruff over the backend, `frontend/check.mjs` over the frontend |
 | type-check | `make types` | `uv run ty check` (the `app` package) |
@@ -42,7 +43,7 @@ backend/.venv` clears it.
 | stop those | `make compose-down` | keeps the data; `docker compose down -v` drops it |
 
 CI runs `make lint`, `make types` and `make test` on Linux for every push and
-pull request, and `make test-integration` as a second job
+pull request, with `make test-integration` and `make test-e2e` as two more jobs
 (`.github/workflows/check.yml`) — through the Makefile, so there is only one
 copy of how to check this project.
 
@@ -58,7 +59,8 @@ means changing it in three places — the Makefile, `servers:` in `openapi.yaml`
 and `API_BASE` in `frontend/src/api/client.js`.
 
 The frontend has no toolchain and no test runner of its own
-(`_docs/decisions.md` #3).
+(`_docs/decisions.md` #3). Its browser tests live in `e2e/` and are driven from
+Python, so that stays true (#28).
 
 `NEXTLANE_DB` chooses the database and its shape chooses the implementation: a
 `postgresql://` DSN is Postgres (**the default**), a path is SQLite, `:memory:`
@@ -95,6 +97,7 @@ they disagree.
 | `backend/app/frontend.py` | serving the frontend from the API, when `NEXTLANE_FRONTEND` says where |
 | `backend/tests/` | written before the endpoints; the contract test guards drift |
 | `backend/tests/test_compose.py` | the real stack, marked `integration` and opt-in |
+| `e2e/` | the browser tests — Playwright against `docker-compose.yaml` |
 | `frontend/src/api/client.js` | **the only module that talks to a backend** |
 | `frontend/src/domain/` | pure logic: validation, workload (§22), focus ranking (§23) |
 | `src/simple_kanban_project/` | uv package stub — see Rules |

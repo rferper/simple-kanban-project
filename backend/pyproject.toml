@@ -24,6 +24,9 @@ dev = [
     "pyyaml>=6.0",
     "ruff>=0.16.7",
     "ty>=0.0.80",
+    # The browser tests in ../e2e. Python rather than npm, so the frontend keeps
+    # having no toolchain at all - decisions #3, and #28 for this choice.
+    "pytest-playwright>=0.5",
 ]
 
 # Not a distributable package — it is an application that is run, not imported.

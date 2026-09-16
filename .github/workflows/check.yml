@@ -116,3 +116,52 @@ jobs:
       - name: Stack logs on failure
         if: failure()
         run: docker compose -p nextlane-it logs --tail 100
+
+  # The browser tests. A third job rather than more steps on the second: they
+  # download a browser, and a failure here means something different from a
+  # failure there — the API can be perfectly correct while the page is blank.
+  e2e:
+    name: the app in a browser
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install dependencies
+        run: uv sync --locked
+        working-directory: backend
+
+      # Keyed on the lock file: the browser build is pinned by the Playwright
+      # version, so a new browser is downloaded exactly when that changes.
+      - name: Cache the browser
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('backend/uv.lock') }}
+
+      - name: Install Chromium
+        run: uv run playwright install --with-deps chromium
+        working-directory: backend
+
+      - name: End-to-end tests
+        run: make test-e2e
+
+      - name: Stack logs on failure
+        if: failure()
+        run: docker compose -p nextlane-e2e logs --tail 100
+
+      # Playwright keeps traces and screenshots of failures; without this they
+      # die with the runner and all anybody has is an assertion message.
+      - name: Failure artefacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failures
+          path: test-results/
+          if-no-files-found: ignore

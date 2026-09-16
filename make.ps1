@@ -25,7 +25,7 @@
 param(
     [Parameter(Position = 0)]
     [ValidateSet('help', 'install', 'run', 'api', 'web', 'test', 'test-one', 'lint', 'types', 'check', 'open', 'clean', 'docker-build', 'docker-run', 'compose-up', 'compose-down',
-        'postgres', 'postgres-stop', 'test-postgres', 'test-integration')]
+        'postgres', 'postgres-stop', 'test-postgres', 'test-integration', 'test-e2e')]
     [string]$Target = 'help',
 
     [int]$ApiPort = 8001,
@@ -116,6 +116,7 @@ function Show-Help {
     Write-Host '  .\make.ps1 postgres   start the local Postgres (before run)'
     Write-Host '  .\make.ps1 test-postgres  run the suite against Postgres as well'
     Write-Host '  .\make.ps1 test-integration  run the compose stack and test against it'
+    Write-Host '  .\make.ps1 test-e2e   drive the app in a browser against that stack'
     Write-Host '  .\make.ps1 lint       lint the backend and check the frontend'
     Write-Host '  .\make.ps1 types      type-check the backend'
     Write-Host '  .\make.ps1 check      lint + types + tests'
@@ -251,6 +252,21 @@ function Invoke-PostgresStop {
     )
 }
 
+function Invoke-TestE2E {
+    Assert-Uv
+    Assert-Docker
+    # Idempotent and quick once the browser is there; a first run downloads it.
+    Invoke-Native -File 'uv' -WorkingDirectory $Backend -Arguments @(
+        'run', 'playwright', 'install', 'chromium'
+    )
+    # A failed browser test with nothing but an assertion message is a bad
+    # afternoon. These leave a screenshot and a trace in test-results/.
+    Invoke-Native -File 'uv' -WorkingDirectory $Root -Arguments @(
+        'run', '--project', 'backend', 'pytest', 'e2e',
+        '--screenshot=only-on-failure', '--tracing=retain-on-failure'
+    )
+}
+
 function Invoke-TestIntegration {
     Assert-Uv
     Assert-Docker
@@ -276,6 +292,15 @@ function Invoke-Lint {
     Assert-Uv
     Invoke-Native -File 'uv' -Arguments @('run', 'ruff', 'check', '.') -WorkingDirectory $Backend
     Invoke-Native -File 'uv' -Arguments @('run', 'ruff', 'format', '--check', '.') -WorkingDirectory $Backend
+
+    # e2e/ is outside the backend, so ruff is pointed at it with the same
+    # configuration rather than being left to find defaults up the tree.
+    Invoke-Native -File 'uv' -WorkingDirectory $Backend -Arguments @(
+        'run', 'ruff', 'check', '--config', 'pyproject.toml', '../e2e'
+    )
+    Invoke-Native -File 'uv' -WorkingDirectory $Backend -Arguments @(
+        'run', 'ruff', 'format', '--check', '--config', 'pyproject.toml', '../e2e'
+    )
 
     # No ESLint: that means npm and a node_modules, which decisions #3 avoided.
     # This is dependency-free and catches what actually breaks a no-build
@@ -366,4 +391,5 @@ switch ($Target) {
     'postgres-stop' { Invoke-PostgresStop }
     'test-postgres' { Invoke-TestPostgres }
     'test-integration' { Invoke-TestIntegration }
+    'test-e2e'      { Invoke-TestE2E }
 }

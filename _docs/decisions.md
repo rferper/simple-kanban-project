@@ -603,3 +603,53 @@ Cost accepted: about a minute a run, a second CI job, and a test file that
 shells out to `docker compose` — which means it is testing the same file it
 documents, and will need updating whenever the compose file changes shape. That
 is the point of it.
+
+## 28. The browser tests are Python, and they live in `e2e/`
+
+`e2e/` drives a real Chromium against `docker-compose.yaml` with Playwright: the
+image the `Dockerfile` builds, serving the frontend, talking to Postgres.
+Nothing mocked, nothing called directly — every test clicks a button.
+
+**Python rather than Node.** `@playwright/test` is the conventional choice and
+it would have put an npm and a `node_modules` into a repository that
+deliberately has neither. #3 turned that down for the frontend, and bringing it
+in through the test folder would be the same decision made quietly. Python
+Playwright is one dev dependency, runs under the pytest everything else already
+uses, and leaves the frontend with no toolchain at all — which is the property
+#3 was protecting.
+
+Cost accepted: a 150MB browser download on first run, and browser tests written
+in a different language from the code under test. The second is less of a
+problem than it sounds, because these assert on rendered behaviour rather than
+on the frontend's internals — no test here imports a module from `frontend/`.
+
+**Three suites, one line between them.** Adding this made it worth saying where
+things go:
+
+* `backend/tests/` — the API and the store contract, in-process, in
+  milliseconds. Business rules live here.
+* `backend/tests/test_compose.py` — the container seams (#27). HTTP and SQL, no
+  browser.
+* `e2e/` — what a person sees. If a test does not need a rendered page, it
+  belongs in one of the other two.
+
+So `e2e/test_it_persists.py` proves a card is still on the board after the app
+restarts, and says nothing about where it was kept; the SQL assertion for the
+same journey is in #27's file. Two tests, one story, neither duplicating the
+other.
+
+**The scenarios are journeys, not features.** Signing in and staying signed in;
+add a card, open it, move it, finish it; is it still there after a reload, in
+another browser, after a deploy; and does the dashboard answer the question the
+product exists to answer. Each file fails for a reason no other test in the
+repository can fail for.
+
+**Its own stack.** Compose project `nextlane-e2e` on ports 18100 and 15532 —
+different again from the development stack and from #27's — because the teardown
+deletes a volume and all three may be running at once.
+
+Two things learned writing them, recorded because both cost time: Playwright's
+reads (`all_text_contents`) do not wait, so an assertion has to come first or
+the failure blames the wrong thing; and `inner_text()` returns what CSS
+rendered, which upper-cases the column headings, while `text_content()` returns
+what the DOM holds.

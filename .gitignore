@@ -203,6 +203,9 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Playwright's screenshots and traces from a failed e2e run (see e2e/README.md).
+test-results/
+
 # Ruff stuff:
 .ruff_cache/
 
