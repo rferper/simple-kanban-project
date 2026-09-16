@@ -303,6 +303,55 @@ class TestItReallyUsesPostgres:
         assert stack.query("SELECT current_database()") == ("nextlane",)
 
 
+class TestTheHealthEndpoint:
+    """What the deploy believes, checked against the real stack.
+
+    `tests/test_health.py` covers what it says; this covers that the thing a
+    load balancer polls answers in the container, with a real database behind
+    it, without a token.
+    """
+
+    def test_it_answers_without_a_token(self, stack: Stack):
+        response = httpx.get(stack.base + "/api/health", timeout=10)
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok", "database": "ok"}
+
+    def test_the_container_health_check_is_this(self, stack: Stack):
+        """The image's HEALTHCHECK polls it, so `app` reporting healthy at the
+        top of this file already depended on it. Said out loud here because a
+        change to either one silently weakens the other."""
+        dockerfile = (REPO / "Dockerfile").read_text(encoding="utf-8")
+        assert "/api/health" in dockerfile
+
+    def test_it_would_notice_the_database_going_away(self, stack: Stack):
+        """The half that matters, against a real Postgres: stop the database and
+        the endpoint has to stop saying everything is fine."""
+        stack.compose("stop", "db")
+        try:
+            response = httpx.get(stack.base + "/api/health", timeout=20)
+            assert response.status_code == 503
+            assert response.json()["database"] == "unreachable"
+        finally:
+            stack.compose("start", "db")
+            stack.compose("exec", "-T", "db", "sh", "-c", "until pg_isready -q; do sleep 1; done")
+
+    def test_and_it_recovers_on_its_own(self, stack: Stack):
+        """Going red is half of it. An app that stays red after the database
+        comes back needs a human to restart it, which is the same outage.
+
+        This is why the pool checks a connection before handing it out: without
+        that it keeps serving the ones it held when the server went away, and
+        this test is what found it.
+        """
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if httpx.get(stack.base + "/api/health", timeout=20).json()["status"] == "ok":
+                return
+            time.sleep(1)
+
+        raise AssertionError(f"still degraded 30s after Postgres came back\n{stack.logs()}")
+
+
 class TestTheAiFeatureIsOptional:
     """AGENTS.md: the app must stay fully usable with the AI feature off. No
     ANTHROPIC_API_KEY is set for this stack, so this is that arrangement."""

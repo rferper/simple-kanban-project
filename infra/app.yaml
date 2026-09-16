@@ -1,0 +1,265 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  NextLane: one instance running the container from ECR beside its Postgres.
+
+# The cheapest shape that actually runs this application, and deliberately so.
+# §26 of the spec says this project is not to spend itself on infrastructure,
+# and §33 rules out multi-user — so this is a single-user Kanban, and an ALB in
+# front of a Fargate task in two availability zones would be about $55 a month
+# of redundancy for one person's board.
+#
+#   this            t4g.small + 20GB        ~$15/month
+#   App Runner + RDS                        ~$30/month, and free HTTPS
+#   ALB + Fargate + RDS                     ~$55/month
+#
+# **This template serves plain HTTP.** An Elastic IP has no certificate and
+# nothing here buys a domain, so the bearer token crosses the network in the
+# clear. That is acceptable for a demo you can reach and not much else; the
+# smallest fix is a domain plus App Runner or CloudFront, and that is a
+# different template. Say so out loud rather than shipping it quietly.
+#
+# Swapping this file for a different shape is the intended way to change your
+# mind: the pipeline passes `ImageUri` and reads the `Url` output, and knows
+# nothing else about what is in here.
+
+Parameters:
+  ImageUri:
+    Type: String
+    Description: The ECR image to run, tagged with the commit that built it.
+
+  InstanceType:
+    Type: String
+    Default: t4g.small
+    Description: Graviton — cheaper per hour, and the image is built multi-arch.
+
+  DatabasePassword:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >-
+      Left empty, one is generated into Secrets Manager. Never a default in the
+      template: a password checked into a repository is not a password.
+
+  LatestAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+    Description: >-
+      Resolved at deploy time from SSM, so this template does not carry an AMI
+      id that goes stale and silently pins an unpatched image.
+
+Resources:
+  # ------------------------------------------------------------------ network
+  #
+  # Its own VPC rather than the default one: a default VPC may not exist, may
+  # have been modified, and is shared with whatever else lives in the account.
+
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.20.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags: [{ Key: Name, Value: !Ref AWS::StackName }]
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      CidrBlock: 10.20.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      MapPublicIpOnLaunch: true
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  SubnetRouteAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  # Port 80 only. No SSH: getting a shell is `aws ssm start-session`, which
+  # leaves an audit trail and needs no open port or key pair to lose.
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${AWS::StackName} — the app, over HTTP"
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: The app. Plain HTTP — see the note at the top.
+
+  # ----------------------------------------------------------------- secrets
+  #
+  # Postgres never leaves this instance, but the password still does not belong
+  # in UserData, which is readable by anything that can reach the metadata
+  # service.
+
+  DatabaseSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "${AWS::StackName}/database"
+      Description: The application's Postgres password.
+      GenerateSecretString:
+        SecretStringTemplate: '{"username":"nextlane"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true # it ends up in a DSN
+
+  # -------------------------------------------------------------------- roles
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-instance"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        # A shell without an open SSH port.
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        # Pull the image. Read-only: the instance never pushes.
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      Policies:
+        - PolicyName: read-its-own-database-password
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref DatabaseSecret
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${AWS::StackName}-instance"
+      Roles: [!Ref InstanceRole]
+
+  # ----------------------------------------------------------------- the host
+
+  # The board lives here and not on the root volume, so the instance can be
+  # replaced — which a deploy does — without taking the data with it.
+  DataVolume:
+    Type: AWS::EC2::Volume
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Size: 20
+      VolumeType: gp3
+      Encrypted: true
+      Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-data" }]
+
+  Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref LatestAmi
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds: [!Ref SecurityGroup]
+      Volumes:
+        - Device: /dev/sdf
+          VolumeId: !Ref DataVolume
+      Tags: [{ Key: Name, Value: !Ref AWS::StackName }]
+      # ImageUri is in here, so a new image means a new instance. Crude, and
+      # the right kind of crude at this size: no half-updated host, and the
+      # board is on the volume above rather than on this disk.
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euxo pipefail
+
+          dnf install -y docker jq
+          systemctl enable --now docker
+
+          # First boot formats the data volume; every boot after finds a
+          # filesystem and leaves it alone. `-N` is what makes that safe.
+          until [ -e /dev/sdf ] || [ -e /dev/nvme1n1 ]; do sleep 1; done
+          DEVICE=$(readlink -f /dev/sdf 2>/dev/null || echo /dev/nvme1n1)
+          blkid "$DEVICE" || mkfs -t xfs "$DEVICE"
+          mkdir -p /data
+          grep -q "$DEVICE" /etc/fstab || echo "$DEVICE /data xfs defaults,nofail 0 2" >> /etc/fstab
+          mount -a
+
+          PASSWORD=$(aws secretsmanager get-secret-value \
+            --secret-id ${DatabaseSecret} \
+            --region ${AWS::Region} \
+            --query SecretString --output text | jq -r .password)
+
+          mkdir -p /data/postgres
+          docker network create nextlane || true
+
+          docker rm -f nextlane-db nextlane-app 2>/dev/null || true
+
+          docker run -d --name nextlane-db --network nextlane --restart always \
+            -e POSTGRES_USER=nextlane \
+            -e POSTGRES_PASSWORD="$PASSWORD" \
+            -e POSTGRES_DB=nextlane \
+            -v /data/postgres:/var/lib/postgresql/data \
+            --health-cmd 'pg_isready -U nextlane -d nextlane' \
+            --health-interval 5s --health-retries 10 \
+            postgres:16-alpine
+
+          until [ "$(docker inspect -f '{{.State.Health.Status}}' nextlane-db)" = healthy ]; do
+            sleep 2
+          done
+
+          aws ecr get-login-password --region ${AWS::Region} \
+            | docker login --username AWS --password-stdin "$(echo ${ImageUri} | cut -d/ -f1)"
+
+          # Port 80 on the host, 8000 in the container — one process serving the
+          # API and the frontend (`_docs/decisions.md` #23).
+          docker run -d --name nextlane-app --network nextlane --restart always \
+            -p 80:8000 \
+            -e NEXTLANE_DB="postgresql://nextlane:$PASSWORD@nextlane-db:5432/nextlane" \
+            ${ImageUri}
+
+  # A fixed address, so the URL survives the instance being replaced.
+  Address:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  AddressAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt Address.AllocationId
+      InstanceId: !Ref Instance
+
+Outputs:
+  Url:
+    Description: >-
+      Where the app is. The pipeline reads this output by name and polls
+      /api/health against it, so renaming it breaks the deploy check.
+    Value: !Sub "http://${Address}"
+
+  DatabaseSecretArn:
+    Description: Where the generated Postgres password lives.
+    Value: !Ref DatabaseSecret

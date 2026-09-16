@@ -24,6 +24,8 @@
 # by the image. Keeping them out keeps a docs edit from busting the build cache.
 _docs
 backend/tests
+e2e
+infra
 src
 Makefile
 make.ps1

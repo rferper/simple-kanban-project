@@ -42,10 +42,19 @@ backend/.venv` clears it.
 | run it with Postgres | `make compose-up` | `docker compose up --build -d` — app + database |
 | stop those | `make compose-down` | keeps the data; `docker compose down -v` drops it |
 
-CI runs `make lint`, `make types` and `make test` on Linux for every push and
-pull request, with `make test-integration` and `make test-e2e` as two more jobs
-(`.github/workflows/check.yml`) — through the Makefile, so there is only one
-copy of how to check this project.
+CI is one pipeline, `.github/workflows/check.yml`, through the Makefile so there
+is only one copy of how to check this project:
+
+    backend ┐
+            ├─ integration ┐
+   frontend ┘         e2e ─┴─ deploy ─ health check
+
+`backend` and `frontend` run at once; the two stack jobs each build the compose
+stack. **`deploy` skips unless the `AWS_DEPLOY_ROLE_ARN` repository variable is
+set** (`_docs/decisions.md` #29), so nothing is deployed and nothing is billed
+until someone turns it on. There is no AWS access key anywhere — the role is
+assumed with a GitHub OIDC token, and `infra/github-oidc-role.yaml` is what
+creates it.
 
 Frontend <http://localhost:8000>, API <http://localhost:8001>, docs at `/docs`.
 Sign in with `researcher@example.com` / `nextlane`.
@@ -86,6 +95,7 @@ they disagree.
 | `_docs/_team/` | the role briefs the subagents run on |
 | `openapi.yaml` | the API contract, derived from the frontend client (#7) |
 | `Dockerfile` | the whole app as one image — Node checks the frontend, Python serves it |
+| `infra/` | CloudFormation: the GitHub OIDC deploy role, and the app stack |
 | `docker-compose.yaml` | that image plus the Postgres it deploys against |
 | `frontend/` | the whole UI, talking to the API — start at its README |
 | `backend/` | the FastAPI API, on SQLite or Postgres — start at its README |
@@ -118,8 +128,9 @@ they disagree.
   — the dict, SQLite and Postgres. A fourth one is a new module and a new
   parameter on that test's `store` fixture, and nothing else.
 - The API is closed by default: every endpoint requires a bearer token except
-  `POST /api/auth/login`. Adding a public endpoint means changing `PUBLIC` in
-  `backend/tests/test_contract.py`, which is deliberately a visible edit.
+  `POST /api/auth/login`, `GET /` and `GET /api/health`. Adding a public
+  endpoint means changing `PUBLIC` in `backend/tests/test_contract.py`, which is
+  deliberately a visible edit.
 - Never put a password or a hash in a response model. A contract test walks
   every response schema to check.
 - Do not delete `src/simple_kanban_project/`. `pyproject.toml` declares the

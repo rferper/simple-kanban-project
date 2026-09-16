@@ -89,6 +89,37 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ServiceInfo" }
 
+  /api/health:
+    get:
+      tags: [service]
+      summary: Is this process serving?
+      description: |
+        Public, because the things that ask are not people and cannot hold a
+        token: a load balancer deciding whether to send traffic here, the
+        container's own health check, and the deploy pipeline deciding whether
+        the release worked.
+
+        It reports whether the database answered, not what is in it. A check
+        that only proves the web server is up is the one that reports green
+        while every request fails, so this does one cheap read through the
+        store and says whether it came back.
+
+        `200` when it can serve, `503` when it cannot. The status code is the
+        part a load balancer reads.
+      operationId: health
+      security: []
+      responses:
+        "200":
+          description: Serving, and the database answered.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+        "503":
+          description: Up, but it cannot serve — the database did not answer.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Health" }
+
   /api/auth/login:
     post:
       tags: [auth]
@@ -786,6 +817,21 @@ components:
             A regex's reading and a model's are not the same quality, and a
             client should be able to tell them apart — a misconfigured
             deployment should not look like a working one.
+
+    Health:
+      type: object
+      description: |
+        Two words, neither of which is a fact about anybody's job search.
+      required: [status, database]
+      properties:
+        status:
+          type: string
+          description: '"ok" when this process can serve, "degraded" when it cannot.'
+          example: ok
+        database:
+          type: string
+          description: '"ok" when the store answered, "unreachable" when it did not.'
+          example: ok
 
     ServiceInfo:
       type: object

@@ -225,9 +225,28 @@ follow. The schema has no field for the candidate's fit, because §15.2 says
 the app must not judge suitability - a field the model cannot fill is one it
 cannot invent.
 
+## Health
+
+`GET /api/health` — public, because the things that ask are not people and
+cannot hold a token: a load balancer, the container's own `HEALTHCHECK`, and the
+deploy pipeline deciding whether the release worked.
+
+```json
+{ "status": "ok", "database": "ok" }
+```
+
+`200` when it can serve, `503` when it cannot, because the status code is the
+part a load balancer reads. It does one cheap read through the `Store` protocol
+rather than only proving the web server is up — that is the check which reports
+green while every request 500s.
+
+It carries two words, neither of which is a fact about anybody's job search, and
+a test asserts the exact set of keys.
+
 ## Authentication
 
-Every endpoint requires a bearer token except `POST /api/auth/login`.
+Every endpoint requires a bearer token except `POST /api/auth/login`, `GET /`
+and `GET /api/health`.
 
 NextLane holds someone's job search — which roles they want, what rejected them,
 what they are quietly learning in order to leave. No part of it is safe to leave

@@ -114,6 +114,10 @@ PUBLIC = {
     # §23 - someone who opens the API in a browser should learn what it is,
     # rather than be told to authenticate before they know to what.
     ("/", "get"),
+    # The things that ask this are not people and cannot hold a token: a load
+    # balancer, the container's HEALTHCHECK, and the deploy pipeline deciding
+    # whether the release worked. It answers with two words.
+    ("/api/health", "get"),
 }
 
 

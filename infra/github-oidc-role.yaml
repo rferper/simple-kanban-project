@@ -1,0 +1,221 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >-
+  The role GitHub Actions assumes to deploy NextLane. Deployed once, by hand,
+  before the pipeline can do anything.
+
+# Why OIDC and not an access key:
+#
+# A long-lived key in GitHub secrets is a credential that exists whether or not
+# anyone is deploying, can be copied out of a compromised action, and is
+# rotated by somebody remembering. This trades it for a token GitHub mints per
+# run, which lasts minutes and is only accepted from this repository.
+#
+# The trust policy is the security boundary and it is narrow on purpose:
+# `sub` pins the repository *and* the branch, so a fork, a pull request from
+# one, or a push to another branch cannot assume this role. `aud` pins the
+# audience STS expects. Widen `sub` and you have widened who can deploy.
+#
+#   aws cloudformation deploy \
+#     --stack-name nextlane-github-oidc \
+#     --template-file infra/github-oidc-role.yaml \
+#     --capabilities CAPABILITY_NAMED_IAM \
+#     --parameter-overrides GitHubRepository=owner/simple-kanban-project
+#
+# Then set the role ARN it outputs as the AWS_DEPLOY_ROLE_ARN repository
+# variable, and the pipeline's deploy job stops skipping.
+
+Parameters:
+  GitHubRepository:
+    Type: String
+    Description: owner/repo that may assume this role.
+    AllowedPattern: "^[^/]+/[^/]+$"
+
+  GitHubBranch:
+    Type: String
+    Default: main
+    Description: >-
+      The only branch that may deploy. A pull request from a fork runs with a
+      different `sub` and is refused by the trust policy, which is the point.
+
+  CreateOidcProvider:
+    Type: String
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    Description: >-
+      An account may only have one provider for a given URL. Set this to false
+      if something else already created GitHub's, and pass its ARN below.
+
+  ExistingOidcProviderArn:
+    Type: String
+    Default: ""
+    Description: Used only when CreateOidcProvider is false.
+
+  ApplicationStackName:
+    Type: String
+    Default: nextlane
+    Description: >-
+      The stack this role may deploy. Scoping to one stack name means a leaked
+      token cannot rewrite unrelated infrastructure in the account.
+
+  EcrRepositoryName:
+    Type: String
+    Default: nextlane
+
+Conditions:
+  ShouldCreateProvider: !Equals [!Ref CreateOidcProvider, "true"]
+
+Resources:
+  # GitHub's OIDC issuer. The thumbprints are GitHub's well-known
+  # certificate-chain fingerprints; both are listed because the chain has
+  # rolled before and an account pinned to one of them stopped working.
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: ShouldCreateProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref EcrRepositoryName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      # Every push is tagged with a commit sha, so untagged layers are the
+      # leftovers of overwritten builds and nothing refers to them.
+      LifecyclePolicy:
+        LifecyclePolicyText: |
+          {
+            "rules": [
+              {
+                "rulePriority": 1,
+                "description": "Keep the last 10 images",
+                "selection": {
+                  "tagStatus": "any",
+                  "countType": "imageCountMoreThan",
+                  "countNumber": 10
+                },
+                "action": { "type": "expire" }
+              }
+            ]
+          }
+
+  DeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-deploy"
+      Description: !Sub "Assumed by GitHub Actions in ${GitHubRepository}"
+      MaxSessionDuration: 3600
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - ShouldCreateProvider
+                - !Ref GitHubOidcProvider
+                - !Ref ExistingOidcProviderArn
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                # Without this, *any* GitHub repository could assume the role.
+                # It is the whole security boundary; keep it exact.
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepository}:ref:refs/heads/${GitHubBranch}"
+
+      Policies:
+        - PolicyName: push-images
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # The token call is account-wide by design; it grants nothing on
+              # its own without a repository permission below.
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:CompleteLayerUpload
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: !GetAtt EcrRepository.Arn
+
+        - PolicyName: deploy-the-application-stack
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteChangeSet
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:DescribeStacks
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplateSummary
+                  - cloudformation:UpdateStack
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ApplicationStackName}/*"
+              # `deploy` calls this one without a stack in the request.
+              - Effect: Allow
+                Action: cloudformation:GetTemplateSummary
+                Resource: "*"
+
+        # What `infra/app.yaml` actually creates. This is the broad part, and
+        # honestly so: CloudFormation makes these calls on the role's behalf, and
+        # most of them cannot be scoped to resources that do not exist yet. The
+        # narrowing that does work is above — one stack, one repository, one
+        # branch.
+        - PolicyName: manage-the-applications-resources
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:*
+                  - elasticloadbalancing:Describe*
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+              - Effect: Allow
+                Action:
+                  - iam:AttachRolePolicy
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:DeleteRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:GetRole
+                  - iam:PassRole
+                  - iam:PutRolePolicy
+                  - iam:TagRole
+                  - iam:CreateInstanceProfile
+                  - iam:DeleteInstanceProfile
+                  - iam:GetInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - iam:RemoveRoleFromInstanceProfile
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ApplicationStackName}-*"
+                  - !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:instance-profile/${ApplicationStackName}-*"
+
+Outputs:
+  DeployRoleArn:
+    Description: Set this as the AWS_DEPLOY_ROLE_ARN repository variable.
+    Value: !GetAtt DeployRole.Arn
+
+  EcrRepositoryName:
+    Description: Set this as the ECR_REPOSITORY repository variable.
+    Value: !Ref EcrRepository
+
+  Region:
+    Description: Set this as the AWS_REGION repository variable.
+    Value: !Ref AWS::Region

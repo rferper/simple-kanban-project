@@ -271,6 +271,14 @@ class LoginResponse(Wire):
     user: UserPublic
 
 
+class Health(Wire):
+    """What `GET /api/health` says. Read by load balancers and deploys, not
+    people, so it is two words and neither is a fact about anybody."""
+
+    status: str
+    database: str
+
+
 class ServiceInfo(Wire):
     """What `GET /` says. Public, so it must contain nothing worth protecting."""
 

@@ -112,6 +112,7 @@ quietly drift from the others. See [`_docs/decisions.md`](_docs/decisions.md)
 | [`Dockerfile`](Dockerfile) | the whole app as one image |
 | [`docker-compose.yaml`](docker-compose.yaml) | that image, plus Postgres |
 | [`e2e/`](e2e) | the browser tests, against that stack |
+| [`infra/`](infra) | CloudFormation: the deploy role, and the app stack |
 | [`_docs/specs.md`](_docs/specs.md) | the product specification — the source of truth |
 | [`_docs/process.md`](_docs/process.md) | how work moves from issue to merged |
 | [`_docs/decisions.md`](_docs/decisions.md) | calls already settled, and why |

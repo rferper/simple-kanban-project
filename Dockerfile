@@ -84,9 +84,10 @@ USER nextlane
 VOLUME ["/data"]
 EXPOSE 8000
 
-# `/docs` is public and needs no database, so this says the process is serving
-# without touching anyone's cards.
+# `/api/health` is public, carries nothing worth protecting, and reports whether
+# the database answered — so an image that is up but cannot serve says so here
+# rather than by failing every request.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/docs').read()"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health').read()"
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

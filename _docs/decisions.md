@@ -653,3 +653,69 @@ reads (`all_text_contents`) do not wait, so an assertion has to come first or
 the failure blames the wrong thing; and `inner_text()` returns what CSS
 rendered, which upper-cases the column headings, while `text_content()` returns
 what the DOM holds.
+
+## 29. One pipeline, and a deploy that is off until somebody turns it on
+
+`.github/workflows/check.yml` is the whole of CI/CD:
+
+    backend ┐
+            ├─ integration ┐
+   frontend ┘         e2e ─┴─ deploy ─ health check
+
+**`backend` and `frontend` are separate jobs** so they run at once, and because
+they fail for unrelated reasons: one is Ruff, ty and six hundred tests, the
+other is `check.mjs` and whether the static files serve. They were one job
+before, which meant a typo'd import waited on the Postgres suite to find out.
+
+**The two stack jobs each build the compose stack** rather than sharing one
+build. Passing an image between jobs means uploading 265MB and downloading it
+twice; rebuilding costs about forty seconds with a warm layer cache and keeps
+each job able to run on its own.
+
+**The deploy skips unless `vars.AWS_DEPLOY_ROLE_ARN` is set.** There is no AWS
+account wired up, and a deploy job that failed on every push would train
+everyone to ignore a red pipeline. Set the variable and it starts running; until
+then the pipeline is green and nothing is billed to anybody.
+
+**OIDC, and no access keys.** A long-lived key in GitHub secrets exists whether
+or not anyone is deploying, can be copied out of a compromised action, and is
+rotated by somebody remembering. `infra/github-oidc-role.yaml` trades it for a
+token GitHub mints per run, and the trust policy pins the repository *and* the
+branch — a fork, or a pull request from one, gets a different `sub` and is
+refused. That trust policy is the entire security boundary, so
+`tests/test_pipeline.py` fails if it ever grows a wildcard.
+
+**The deploy is not finished when CloudFormation says so.** It is finished when
+the thing answers, so the job polls `GET /api/health` until it reports `ok` and
+then checks that the page itself is served. That endpoint had to be added for
+this (§10's `PUBLIC` list grew by one, deliberately and visibly) and it reports
+whether the *database* answered, not just whether uvicorn is listening: a
+container that came up beside a database that did not is exactly the deploy this
+is meant to catch.
+
+Writing its integration test found a real bug. Stopping Postgres correctly
+turned the endpoint red; starting it again left the app red, because
+`psycopg_pool` kept handing out the connections it held when the server went
+away. A blip of seconds would have needed a human to restart the app. The pool
+now checks a connection before handing it out, at the cost of a `SELECT 1` per
+checkout.
+
+**`infra/app.yaml` is the cheapest shape that runs this, and is meant to be
+replaced.** One instance with the container and its Postgres, about $15 a
+month, because §26 says this project is not to spend itself on infrastructure
+and §33 rules out multi-user — an ALB in front of two Fargate tasks would be
+redundancy for one person's board. It serves plain HTTP, which is said out loud
+in the template rather than discovered later: there is no certificate on an
+Elastic IP, so the bearer token crosses the network in the clear. That is
+acceptable for something you can show people and not much else. The pipeline
+passes `ImageUri` and reads the `Url` output and knows nothing else about the
+file, so swapping it for App Runner or Fargate is one file and two variables.
+
+Cost accepted: `infra/` describes infrastructure nobody has deployed, and
+`aws cloudformation validate-template` needs an account, so the templates are
+guarded by `tests/test_pipeline.py` reading them as data instead — that the
+template the pipeline deploys exists, that the output it reads is declared, that
+the parameter it passes is a parameter, and that the port the host maps is the
+port the image exposes. That is the seam between the pipeline and this
+codebase. It is not a substitute for AWS validating the YAML, and the first real
+deploy should be expected to find something.

@@ -220,6 +220,13 @@ class PostgresStore:
             # connection, and on startup it is how long a wrong DSN takes to
             # say so.
             timeout=10,
+            # Verify a connection before handing it out, and replace it if it
+            # has died. Without this the pool keeps serving the connections it
+            # held when the database went away, so a blip that lasts seconds
+            # leaves the app broken until someone restarts it — which
+            # `tests/test_compose.py` caught by stopping Postgres and starting
+            # it again. The cost is a `SELECT 1` per checkout.
+            check=ConnectionPool.check_connection,
             kwargs={
                 # Timestamps go in and come out UTC whatever the server is set
                 # to, so this cannot disagree with SQLite about what a stored
